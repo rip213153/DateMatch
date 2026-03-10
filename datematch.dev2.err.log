@@ -1,0 +1,14 @@
+npm warn Unknown project config "enable-source-maps". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+Error: spawn EPERM
+    at ChildProcess.spawn (node:internal/child_process:440:11)
+    at spawn (node:child_process:796:9)
+    at fork (node:child_process:174:10)
+    at C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\cli\next-dev.js:213:45
+    at new Promise (<anonymous>)
+    at startServer (C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\cli\next-dev.js:199:16)
+    at runDevServer (C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\cli\next-dev.js:280:23)
+    at Module.nextDev (C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\cli\next-dev.js:288:11) {
+  errno: -4048,
+  code: 'EPERM',
+  syscall: 'spawn'
+}

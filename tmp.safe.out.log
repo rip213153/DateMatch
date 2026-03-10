@@ -1,0 +1,4 @@
+
+> datematch@0.1.0 dev:safe
+> node scripts/dev-safe.cjs dev
+

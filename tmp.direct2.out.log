@@ -1,0 +1,10 @@
+  ▲ Next.js 14.2.16
+  - Local:        http://localhost:3012
+  - Environments: .env.local
+  - Experiments (use with caution):
+    · cpus
+    · workerThreads
+    · webpackBuildWorker
+
+ ✓ Starting...
+ ✓ Ready in 1002ms

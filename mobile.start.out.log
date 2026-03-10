@@ -1,0 +1,14 @@
+
+> datematch@0.1.0 start
+> next start -H 0.0.0.0 -p 3000
+
+  ▲ Next.js 14.2.16
+  - Local:        http://localhost:3000
+  - Network:      http://0.0.0.0:3000
+
+ ✓ Starting...
+ ✓ Ready in 849ms
+Database path: C:\Users\rip\Downloads\datematch-main\datematch.db
+Ensured email_login_tokens table exists
+Ensured match_confirmations table exists
+Ensured chat_messages table exists

@@ -1,0 +1,33 @@
+<w> [webpack.cache.PackFileCacheStrategy] Restoring pack from C:\Users\rip\Downloads\datematch-main\.next\cache\webpack\server-development.pack.gz failed: TypeError: Cannot read properties of undefined (reading 'hasStartTime')
+<w> [webpack.cache.PackFileCacheStrategy] Restoring pack from C:\Users\rip\Downloads\datematch-main\.next\cache\webpack\server-development.pack.gz failed: TypeError: Cannot read properties of undefined (reading 'hasStartTime')
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, lstat 'C:\Users\rip\Downloads\datematch-main\.next\server\vendor-chunks\motion-utils.js'
+<w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving './vendor-chunks/motion-utils' in C:\Users\rip\Downloads\datematch-main\.next\server for build dependencies doesn't lead to expected result 'C:\Users\rip\Downloads\datematch-main\.next\server\vendor-chunks\motion-utils.js', but to 'Error: Can't resolve './vendor-chunks/motion-utils' in 'C:\Users\rip\Downloads\datematch-main\.next\server'' instead. Resolving dependencies are ignored for this path.
+<w>  at resolve commonjs file ./vendor-chunks/motion-utils (expected C:\Users\rip\Downloads\datematch-main\.next\server\vendor-chunks\motion-utils.js)
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\.next\server\webpack-runtime.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\.next\server\webpack-runtime.js
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\.next\server\pages\_error.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\.next\server\pages\_error.js
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\server\require.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\server\require.js
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\server\load-components.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\server\load-components.js
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\build\utils.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\build\utils.js
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at resolve commonjs C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w> [webpack.cache.PackFileCacheStrategy/webpack.FileSystemInfo] Resolving './vendor-chunks/motion-dom' in C:\Users\rip\Downloads\datematch-main\.next\server for build dependencies doesn't lead to expected result 'C:\Users\rip\Downloads\datematch-main\.next\server\vendor-chunks\motion-dom.js', but to 'Error: Can't resolve './vendor-chunks/motion-dom' in 'C:\Users\rip\Downloads\datematch-main\.next\server'' instead. Resolving dependencies are ignored for this path.
+<w>  at resolve commonjs file ./vendor-chunks/motion-dom (expected C:\Users\rip\Downloads\datematch-main\.next\server\vendor-chunks\motion-dom.js)
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\.next\server\webpack-runtime.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\.next\server\webpack-runtime.js
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\.next\server\pages\_error.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\.next\server\pages\_error.js
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\server\require.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\server\require.js
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\server\load-components.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\server\load-components.js
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\build\utils.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\build\utils.js
+<w>  at file dependencies C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at file C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js
+<w>  at resolve commonjs C:\Users\rip\Downloads\datematch-main\node_modules\next\dist\build\webpack\loaders\next-route-loader\index.js

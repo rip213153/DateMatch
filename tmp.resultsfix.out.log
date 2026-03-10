@@ -1,0 +1,10 @@
+
+> datematch@0.1.0 dev
+> node scripts/dev-direct.cjs
+
+  ▲ Next.js 14.2.16
+  - Local:        http://localhost:3006
+  - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 1047ms
