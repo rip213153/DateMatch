@@ -34,7 +34,6 @@ function FindMatchContent() {
     seeking: "",
     university: "",
     email: "",
-    instagram: "",
     interests: "",
     idealDate: "",
 
@@ -228,20 +227,6 @@ function FindMatchContent() {
               <p className="text-sm text-gray-500 mt-1">
                 我们将用此邮箱通知你匹配结果
               </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Instagram（选填）
-              </label>
-              <Input
-                value={formData.instagram}
-                onChange={(e) =>
-                  setFormData({ ...formData, instagram: e.target.value })
-                }
-                className="w-full"
-                placeholder="@你的用户名"
-              />
             </div>
 
             <div>

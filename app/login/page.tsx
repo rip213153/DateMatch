@@ -36,17 +36,19 @@ export default function LoginPage() {
         body: JSON.stringify({ email }),
       });
 
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json();
 
       if (!res.ok || !data?.success) {
         setError(data?.error || "验证失败，请稍后重试");
+        setSubmitting(false);
         return;
       }
 
       await AuthService.loginWithEmail(String(data?.email || email));
       router.replace(redirectTo);
-    } finally {
-      setSubmitting(false);
+    } catch (err) {
+      console.error("Login error:", err);
+      setError("网络错误，请重试");
     }
   };
 

@@ -43,11 +43,12 @@ export interface UserProfile {
   seeking: string;
   university: string;
   email: string;
-  instagram?: string;
-  chat_user_id?: string | null;
   interests: string | string[];
   ideal_date: string;
+  bio?: string;
   personality_profile?: PersonalityTraits | string;
+  matching_status?: "WAITING" | "MATCHED" | "VIEWED";
+  match_at?: string | number | Date | null;
 }
 
 export interface Match {

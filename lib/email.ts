@@ -1,4 +1,4 @@
-﻿import { Resend } from "resend";
+import { Resend } from "resend";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -118,6 +118,51 @@ export async function sendLoginVerificationEmail(params: {
   });
 
   return assertEmailSent(response, "login verification email send failed");
+}
+
+export async function sendMatchResultEmail(params: {
+  email: string;
+  name: string;
+  matchCount: number;
+  viewUrl: string;
+}) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error("RESEND_API_KEY is not configured");
+  }
+
+  const { email, name, matchCount, viewUrl } = params;
+  const submittedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+
+  const response = await resend.emails.send({
+    from: "DateMatch <onboarding@resend.dev>",
+    to: email,
+    subject: `你的本周匹配结果已出炉 · 共 ${matchCount} 位`,
+    html: `
+      <div style="max-width:640px;margin:0 auto;padding:24px;background:#fff0f6;font-family:Georgia,'Times New Roman',serif;color:#2b1a1f;">
+        <h1 style="margin:0 0 8px;font-size:48px;line-height:1;color:#db2777;">匹配结果出炉</h1>
+        <p style="margin:0 0 20px;font-size:24px;line-height:1.4;color:#5b4b52;">亲爱的 ${name}，你的本周匹配对象已生成</p>
+
+        <div style="background:#fff;border:1px solid #fbcfe8;border-radius:22px;padding:30px 28px;">
+          <h2 style="margin:0 0 16px;font-size:32px;line-height:1.2;color:#1f1f1f;">遇见契合的你</h2>
+          <p style="margin:0 0 20px;font-size:20px;line-height:1.6;color:#5b4b52;">系统已完成本周匹配计算，为你找到 <strong style="color:#db2777;">${matchCount} 位</strong> 高潜力对象。</p>
+          
+          <p style="margin:0 0 20px;font-size:20px;line-height:1.6;color:#5b4b52;">每个人都是独特的存在，愿你在相遇中发现共鸣，在对话中感受温度。</p>
+
+          <div style="margin: 30px 0; padding: 20px; background: #fff8fb; border-radius: 12px; border: 1px dashed #db2777;">
+            <p style="margin:0 0 8px;font-size:18px;color:#db2777;font-weight:bold;">请复制以下链接到浏览器查看结果：</p>
+            <p style="margin:0;word-break:break-all;font-size:18px;color:#1f1f1f;font-weight:bold;">http://39.107.110.145:3000/dev-channel-2</p>
+          </div>
+
+          <p style="margin:20px 0 0;font-size:16px;color:#8c7a80;">匹配结果将在 5 天内有效，请及时查看。</p>
+        </div>
+
+        <p style="margin:24px 0 0;font-size:16px;color:#8c7a80;text-align:center;">祝你遇见美好 · DateMatch 团队</p>
+      </div>
+    `,
+    text: `亲爱的 ${name}，你的本周匹配结果已出炉，共找到 ${matchCount} 位高潜力对象。请复制以下链接到浏览器查看：http://39.107.110.145:3000`,
+  });
+
+  return assertEmailSent(response, "match result email send failed");
 }
 
 export { getBaseUrl };

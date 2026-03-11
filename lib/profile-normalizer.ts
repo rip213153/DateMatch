@@ -1,4 +1,4 @@
-﻿import type { UserProfile } from "@/app/data/types";
+import type { UserProfile } from "@/app/data/types";
 import { profiles } from "@/lib/schema";
 
 type ProfileRow = typeof profiles.$inferSelect;
@@ -33,10 +33,9 @@ export function normalizeProfile(row: ProfileRow): UserProfile {
     seeking: row.seeking,
     university: row.university,
     email: row.email,
-    instagram: row.instagram ?? undefined,
-    chat_user_id: row.chat_user_id ?? null,
     interests: normalizeInterests(row.interests),
     ideal_date: row.ideal_date,
+    bio: row.bio ?? undefined,
     personality_profile: normalizePersonalityProfile(row.personality_profile),
   };
 }

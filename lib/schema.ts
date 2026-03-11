@@ -1,4 +1,4 @@
-﻿import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+﻿﻿import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const profiles = sqliteTable(
   "profiles",
@@ -11,10 +11,13 @@ export const profiles = sqliteTable(
     university: text("university").notNull(),
     email: text("email").notNull(),
     chat_user_id: text("chat_user_id"),
-    instagram: text("instagram"),
-    interests: text("interests", { mode: "json" }),
+    interests: text("interests"),
     ideal_date: text("ideal_date").notNull(),
+    bio: text("bio"),
     personality_profile: text("personality_profile", { mode: "json" }).notNull(),
+    matching_status: text("matching_status", { enum: ["WAITING", "MATCHED", "VIEWED"] }).default("WAITING"),
+    match_at: integer("match_at", { mode: "timestamp" }),
+    email_sent_at: integer("email_sent_at", { mode: "timestamp" }),
     created_at: integer("created_at", { mode: "timestamp" }).defaultNow(),
   },
   (table) => ({

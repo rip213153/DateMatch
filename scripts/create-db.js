@@ -14,7 +14,6 @@ db.exec(`
     seeking TEXT NOT NULL,
     university TEXT NOT NULL,
     email TEXT NOT NULL,
-    instagram TEXT,
     interests TEXT,
     ideal_date TEXT NOT NULL,
     personality_profile TEXT NOT NULL,

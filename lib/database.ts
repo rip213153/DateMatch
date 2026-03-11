@@ -1,4 +1,4 @@
-﻿import { drizzle } from "drizzle-orm/better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import path from "path";
 
@@ -83,6 +83,17 @@ try {
   console.log("Ensured chat_messages table exists");
 } catch (error) {
   console.error("Failed to ensure chat_messages table:", error);
+}
+
+// Lightweight migration: ensure profiles.email_sent_at exists.
+try {
+  sqlite.exec("ALTER TABLE profiles ADD COLUMN email_sent_at INTEGER");
+  console.log("Added profiles.email_sent_at column");
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!message.includes("duplicate column name")) {
+    console.error("Failed to ensure profiles.email_sent_at column:", error);
+  }
 }
 
 export const db = drizzle(sqlite);

@@ -1,4 +1,4 @@
-﻿const AUTH_TOKEN_KEY = "datematch_auth_token";
+const AUTH_TOKEN_KEY = "datematch_auth_token";
 const AUTH_EXPIRES_AT_KEY = "datematch_auth_expires_at";
 const AUTH_IDENTITY_KEY = "datematch_auth_identity";
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -46,34 +46,7 @@ export class AuthService {
 
     clearAuthStorage();
 
-    try {
-      const res = await fetch("/api/auth/session", {
-        method: "GET",
-        cache: "no-store",
-        credentials: "include",
-      });
-
-      if (!res.ok) return { isAuthenticated: false };
-
-      const data = (await res.json()) as {
-        isAuthenticated?: boolean;
-        email?: string;
-        expiresAt?: number;
-      };
-
-      if (!data?.isAuthenticated) return { isAuthenticated: false };
-
-      if (data.email) {
-        const ttlMs = data.expiresAt
-          ? Math.max(60 * 1000, data.expiresAt * 1000 - Date.now())
-          : DEFAULT_TTL_MS;
-        saveAuthSession(`email:${data.email}`, ttlMs);
-      }
-
-      return { isAuthenticated: true };
-    } catch {
-      return { isAuthenticated: false };
-    }
+    return { isAuthenticated: false };
   }
 
   static async loginWithCode(rawCode: string): Promise<AuthLoginResult> {
@@ -102,11 +75,15 @@ export class AuthService {
   }
 
   static async logout() {
-    clearAuthStorage();
     try {
-      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      await fetch("/api/auth/logout", { 
+        method: "POST", 
+        credentials: "include",
+        cache: "no-store"
+      });
     } catch {
       // noop
     }
+    clearAuthStorage();
   }
 }

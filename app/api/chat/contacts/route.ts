@@ -14,6 +14,10 @@ type ContactItem = {
   university: string;
   lastMessage: string | null;
   lastMessageAt: string | null;
+  email: string;
+  ideal_date: string;
+  bio?: string;
+  interests?: string | string[];
 };
 
 function toPositiveInt(value: unknown): number | null {
@@ -96,7 +100,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const contactItems = Array.from(visibleContactIds)
+    const rawContactItems = Array.from(visibleContactIds)
       .map((contactId) => {
         const user = userMap.get(contactId);
         if (!user) return null;
@@ -111,11 +115,15 @@ export async function GET(request: Request) {
           university: user.university,
           lastMessage: lastMessage?.content ?? null,
           lastMessageAt: lastMessage?.createdAt ?? null,
+          email: user.email,
+          ideal_date: user.ideal_date,
+          bio: user.bio,
+          interests: user.interests,
           rankScore: topMatch?.match.overallScore ?? 0,
           isTopMatch: Boolean(topMatch),
         };
       })
-      .filter((item): item is ContactItem & { rankScore: number; isTopMatch: boolean } => Boolean(item))
+      .filter((item): item is NonNullable<typeof item> => item !== null)
       .sort((a, b) => {
         const aTime = a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0;
         const bTime = b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0;
@@ -125,13 +133,17 @@ export async function GET(request: Request) {
         return a.id - b.id;
       });
 
-    const contacts: ContactItem[] = contactItems.map((item) => ({
+    const contacts: ContactItem[] = rawContactItems.map((item) => ({
       id: item.id,
       name: item.name,
       age: item.age,
       university: item.university,
       lastMessage: item.lastMessage,
       lastMessageAt: item.lastMessageAt,
+      email: item.email,
+      ideal_date: item.ideal_date,
+      bio: item.bio,
+      interests: item.interests,
     }));
 
     return NextResponse.json({

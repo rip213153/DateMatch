@@ -14,21 +14,40 @@ type CountdownState = {
   nextMatch: Date;
 };
 
-const MATCH_DAY = 3;
+const MATCH_DAY = 5; // 周五
 const MATCH_HOUR = 18;
+const MATCH_MINUTE = 0;
+const DISPLAY_DAYS = 5; // 匹配结果展示 5 天
 
 function getNextMatchTime(now: Date): Date {
-  const next = new Date(now);
-  const daysUntilMatch = (MATCH_DAY - now.getDay() + 7) % 7;
-
-  next.setDate(now.getDate() + daysUntilMatch);
-  next.setHours(MATCH_HOUR, 0, 0, 0);
-
-  if (next <= now) {
-    next.setDate(next.getDate() + 7);
+  // 计算本周五的时间
+  const thisFriday = new Date(now);
+  const daysSinceFriday = (now.getDay() - MATCH_DAY + 7) % 7;
+  thisFriday.setDate(now.getDate() - daysSinceFriday);
+  thisFriday.setHours(MATCH_HOUR, MATCH_MINUTE, 0, 0);
+  
+  // 计算下周五的时间
+  const nextFriday = new Date(thisFriday);
+  nextFriday.setDate(nextFriday.getDate() + 7);
+  
+  // 匹配时间 = 本周五 18:00
+  const matchTime = thisFriday.getTime();
+  
+  // 展示结束时间 = 匹配时间 + 5 天
+  const displayEndTime = matchTime + (DISPLAY_DAYS * 24 * 60 * 60 * 1000);
+  
+  // 如果当前时间还没到本周五匹配时间，返回本周五
+  if (now.getTime() < matchTime) {
+    return thisFriday;
   }
-
-  return next;
+  
+  // 如果当前时间已经超过展示期，返回下周五
+  if (now.getTime() >= displayEndTime) {
+    return nextFriday;
+  }
+  
+  // 如果当前时间在展示期内，仍然返回下周五（因为这是下一轮匹配）
+  return nextFriday;
 }
 
 function getCountdownState(now: Date = new Date()): CountdownState {
@@ -46,15 +65,47 @@ function getCountdownState(now: Date = new Date()): CountdownState {
 }
 
 function MatchCountdown() {
-  const [countdown, setCountdown] = useState<CountdownState>(() => getCountdownState());
+  const [isClient, setIsClient] = useState(false);
+  const [countdown, setCountdown] = useState<CountdownState | null>(null);
 
   useEffect(() => {
+    setIsClient(true);
+    setCountdown(getCountdownState());
+  }, []);
+
+  useEffect(() => {
+    if (!isClient) return;
+
     const timer = window.setInterval(() => {
       setCountdown(getCountdownState());
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, []);
+  }, [isClient]);
+
+  if (!isClient || !countdown) {
+    return (
+      <div className="mb-7 rounded-2xl border border-pink-100/70 bg-white/70 px-4 py-4 shadow-sm">
+        <div className="mb-2 flex items-center justify-center gap-2 text-sm font-semibold text-pink-600">
+          <Clock3 className="h-4 w-4" />
+          <span>距离下一次匹配开放</span>
+        </div>
+
+        <div className="grid grid-cols-4 gap-2">
+          {[0, 0, 0, 0].map((_, i) => (
+            <div key={i} className="rounded-xl bg-white/90 py-2 text-center">
+              <div className="text-xl font-bold tabular-nums text-gray-800">00</div>
+              <div className="text-xs text-gray-500">{["天", "时", "分", "秒"][i]}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-2 text-center text-xs text-gray-500">
+          每周五 18:00 开放匹配
+        </div>
+      </div>
+    );
+  }
 
   const countdownItems = [
     { label: "天", value: countdown.days },
@@ -82,7 +133,7 @@ function MatchCountdown() {
       </div>
 
       <div className="mt-2 text-center text-xs text-gray-500">
-        每周三 18:00 开放匹配，下一次：
+        每周五 18:00 开放匹配，下一次：
         {countdown.nextMatch.toLocaleString("zh-CN", {
           month: "numeric",
           day: "numeric",

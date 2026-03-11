@@ -1,4 +1,4 @@
-﻿﻿"use client";
+﻿﻿﻿﻿﻿﻿﻿"use client";
 
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
@@ -14,6 +14,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Button } from "@/components/ui/button";
+import { BackButton } from "@/components/ui/back-button";
 import { PersonalityTraits } from "@/app/data/types";
 
 const TEXT = {
@@ -257,8 +258,83 @@ function ResultsContent() {
 
   const activeTrait = activeTraitKey ? traitCards.find((item) => item.key === activeTraitKey) ?? null : null;
 
-  const title = "社交连接者";
-  const description = "你的独特人格决定了你的恋爱方式，保持真诚与沟通会让关系更稳定。";
+  // 根据人格特质生成动态标题和描述
+  const getProfileTitleAndDescription = () => {
+    const scores = profile;
+    const highScores = Object.entries(scores).filter(([, value]) => value >= 7);
+    const lowScores = Object.entries(scores).filter(([, value]) => value <= 3);
+    
+    // 根据最高分的特质决定主标题
+    const dominantTrait = highScores.length > 0 ? highScores[0][0] : Object.keys(scores)[0];
+    
+    const titles: Record<string, string> = {
+      socialStyle: scores.socialStyle >= 7 ? "社交达人" : scores.socialStyle <= 3 ? "深度连接者" : "平衡社交家",
+      emotionalReadiness: scores.emotionalReadiness >= 7 ? "情感投入者" : scores.emotionalReadiness <= 3 ? "理性观察者" : "情感平衡者",
+      dateStyle: scores.dateStyle >= 7 ? "浪漫制造者" : scores.dateStyle <= 3 ? "谨慎探索者" : "自然约会派",
+      commitment: scores.commitment >= 7 ? "长期主义者" : scores.commitment <= 3 ? "自由随性派" : "稳定发展者",
+      communication: scores.communication >= 7 ? "沟通高手" : scores.communication <= 3 ? "内敛倾听者" : "真诚表达者",
+      independence: scores.independence >= 7 ? "独立自我者" : scores.independence <= 3 ? "亲密依赖型" : "平衡独立者",
+      career: scores.career >= 7 ? "事业追求者" : scores.career <= 3 ? "生活享受家" : "工作生活平衡者",
+      flexibility: scores.flexibility >= 7 ? "灵活适应者" : scores.flexibility <= 3 ? "稳定偏好者" : "弹性平衡者",
+    };
+    
+    const descriptions: Record<string, string> = {
+      socialStyle: scores.socialStyle >= 7 
+        ? "你天生擅长建立连接，在社交场合中如鱼得水。记得在热闹中也为内心留出安静空间。"
+        : scores.socialStyle <= 3
+        ? "你更看重深度的情感连接，而非广泛的社交网络。一对一的交流让你更容易展现真实的自己。"
+        : "你既能享受社交的乐趣，也需要独处的时光。这种平衡让你在关系中既亲切又独立。",
+      
+      emotionalReadiness: scores.emotionalReadiness >= 7
+        ? "你对感情投入认真，愿意为关系付出真心。保持这份热忱，同时记得照顾好自己的情感需求。"
+        : scores.emotionalReadiness <= 3
+        ? "你在感情中保持理性，不轻易被情绪左右。试着偶尔放下防备，让真心有机会靠近。"
+        : "你在感性和理性之间找到平衡，既能感受情绪流动，也能保持清醒判断。",
+      
+      dateStyle: scores.dateStyle >= 7
+        ? "你敢于主动制造浪漫，为关系创造美好回忆。你的行动力让爱情充满惊喜和温度。"
+        : scores.dateStyle <= 3
+        ? "你偏好慢慢了解对方，不急于推进关系。这种谨慎让你更容易找到真正合适的人。"
+        : "你的约会风格自然舒适，既不刻意也不被动。真实的相处让你和对方都感到放松。",
+      
+      commitment: scores.commitment >= 7
+        ? "你重视承诺和长期关系，愿意为爱情持续投入。你的稳定性是伴侣最安心的依靠。"
+        : scores.commitment <= 3
+        ? "你享受当下的自由和轻松，不喜欢被束缚。随性的态度让你更容易体验爱情的多种可能。"
+        : "你对关系有适度的期待，既不过度依赖也不刻意疏离。这种平衡让感情自然生长。",
+      
+      communication: scores.communication >= 7
+        ? "你善于表达感受和需求，也懂得倾听对方。良好的沟通能力让你的关系更加顺畅。"
+        : scores.communication <= 3
+        ? "你更习惯用行动而非言语表达情感。试着多分享内心想法，让对方更懂你的真心。"
+        : "你在表达和倾听之间找到平衡，既能说清楚自己，也能理解对方的需求。",
+      
+      independence: scores.independence >= 7
+        ? "你很清楚自己的边界和需求，在关系中保持独立自我。这种清晰让感情更健康持久。"
+        : scores.independence <= 3
+        ? "你享受高参与感的亲密关系，需要对方的陪伴和回应。试着也为彼此留出一些独立空间。"
+        : "你既能享受亲密也能保持独立，这种平衡让你在关系中既温暖又自在。",
+      
+      career: scores.career >= 7
+        ? "你有明确的目标和执行力，在事业上不断追求成长。理解你的野心的人会是最棒的伴侣。"
+        : scores.career <= 3
+        ? "你更看重生活体验和当下感受，不被事业绑架。这种生活态度让你更容易发现小确幸。"
+        : "你在事业和生活之间找到平衡点，既有追求也懂享受。这种节奏让你更有魅力。",
+      
+      flexibility: scores.flexibility >= 7
+        ? "你适应力强，能从容应对关系中的变化和挑战。这种包容力让感情更加稳固。"
+        : scores.flexibility <= 3
+        ? "你偏好稳定和可预期的关系节奏，这让你更有安全感。明确边界会让相处更舒适。"
+        : "你既有原则也能包容差异，在坚持和妥协之间找到平衡。这种弹性让关系更和谐。",
+    };
+    
+    return {
+      title: titles[dominantTrait] || "独特魅力者",
+      description: descriptions[dominantTrait] || "你的独特人格决定了你的恋爱方式，保持真诚与沟通会让关系更稳定。",
+    };
+  };
+  
+  const { title, description } = getProfileTitleAndDescription();
 
   const strengths = [
     "擅长建立社交连接",
@@ -320,6 +396,7 @@ function ResultsContent() {
   return (
     <div className="relative min-h-screen px-4 py-10 sm:px-8">
       <BackgroundEffects />
+      <BackButton className="top-4 left-4 z-50" />
 
       <div className="relative z-10 mx-auto w-full max-w-4xl space-y-8">
         <motion.div initial={{ opacity: 0, y: -16 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
@@ -346,7 +423,7 @@ function ResultsContent() {
         <motion.section
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.05 }}
+          transition={{ delay: 0.02 }}
           className="rounded-[2rem] border border-white/70 bg-white/60 p-8 shadow-xl backdrop-blur-xl md:mb-20"
         >
           <h2 className="mb-6 flex items-center text-xl font-bold text-gray-900">
@@ -417,7 +494,7 @@ function ResultsContent() {
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
+            transition={{ delay: 0.04 }}
             className="rounded-[2rem] border border-green-100 bg-white/60 p-6 shadow-md backdrop-blur-sm"
           >
             <h3 className="mb-4 flex items-center font-bold text-green-700">
@@ -434,7 +511,7 @@ function ResultsContent() {
           <motion.div
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.12 }}
+            transition={{ delay: 0.06 }}
             className="rounded-[2rem] border border-purple-100 bg-white/60 p-6 shadow-md backdrop-blur-sm"
           >
             <h3 className="mb-4 flex items-center font-bold text-purple-700">
@@ -452,7 +529,7 @@ function ResultsContent() {
         <motion.section
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.14 }}
+          transition={{ delay: 0.08 }}
           className="rounded-[2rem] border border-white/70 bg-white/60 p-8 shadow-lg backdrop-blur-xl"
         >
           <h2 className="mb-6 flex items-center text-xl font-bold text-gray-900">
@@ -482,7 +559,7 @@ function ResultsContent() {
         <motion.section
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.16 }}
+          transition={{ delay: 0.1 }}
           className="flex flex-col gap-4 sm:flex-row"
         >
           <Button onClick={downloadResultCard} className="h-12 flex-1 rounded-full bg-white text-pink-600 shadow-md">

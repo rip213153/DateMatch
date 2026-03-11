@@ -1,4 +1,4 @@
-﻿"use client";
+﻿﻿"use client";
 
 import { ReactNode, Suspense, isValidElement, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -21,17 +21,13 @@ function renderQuestionIcon(icon: unknown): ReactNode {
 }
 
 function QuizContent() {
-  const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [isCompletedModalOpen, setIsCompletedModalOpen] = useState(false);
   const [completedProfile, setCompletedProfile] = useState<PersonalityTraits | null>(null);
   const router = useRouter();
 
-  useEffect(() => {
-    setQuestions(getRandomQuestions(20));
-  }, []);
-
+  const questions = useMemo(() => getRandomQuestions(20), []);
   const totalQuestions = Math.max(questions.length, 1);
   const progress = questions.length ? ((currentQuestion + 1) / totalQuestions) * 100 : 0;
   const activeQuestion = questions[currentQuestion];

@@ -18,7 +18,6 @@ export async function POST(request: Request) {
       seeking: String(data?.seeking ?? "").trim(),
       university: String(data?.university ?? "").trim(),
       email: normalizeEmail(data?.email),
-      instagram: String(data?.instagram ?? "").trim() || null,
       interests: String(data?.interests ?? "").trim(),
       ideal_date: String(data?.idealDate ?? "").trim(),
       personality_profile: data?.personalityProfile,

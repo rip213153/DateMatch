@@ -1,4 +1,4 @@
-import { desc, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/database";
 import { profiles } from "@/lib/schema";
@@ -24,8 +24,7 @@ export async function POST(request: Request) {
     const rows = await db
       .select({ id: profiles.id, email: profiles.email })
       .from(profiles)
-      .where(sql`lower(${profiles.email}) = ${email}`)
-      .orderBy(desc(profiles.id))
+      .where(sql`lower(${profiles.email}) = lower(${email})`)
       .limit(1);
 
     if (!rows.length) {

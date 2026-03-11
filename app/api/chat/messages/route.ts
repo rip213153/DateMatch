@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { and, asc, eq, or } from "drizzle-orm";
 import { db } from "@/lib/database";
 import { chatMessages, profiles } from "@/lib/schema";
@@ -21,13 +21,23 @@ function toIsoString(value: unknown): string | null {
   if (value instanceof Date) return value.toISOString();
   if (typeof value === "number") {
     const ms = value > 1_000_000_000_000 ? value : value * 1000;
-    return new Date(ms).toISOString();
+    const date = new Date(ms);
+    if (Number.isNaN(date.getTime())) {
+      console.error("Invalid date from timestamp:", value, "converted to:", ms);
+      return null;
+    }
+    return date.toISOString();
   }
   if (typeof value === "string") {
     const numeric = Number(value);
     if (!Number.isNaN(numeric) && Number.isFinite(numeric)) {
       const ms = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
-      return new Date(ms).toISOString();
+      const date = new Date(ms);
+      if (Number.isNaN(date.getTime())) {
+        console.error("Invalid date from timestamp string:", value, "converted to:", ms);
+        return null;
+      }
+      return date.toISOString();
     }
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
