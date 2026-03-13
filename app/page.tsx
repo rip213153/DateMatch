@@ -20,34 +20,34 @@ const MATCH_MINUTE = 0;
 const DISPLAY_DAYS = 5; // 匹配结果展示 5 天
 
 function getNextMatchTime(now: Date): Date {
-  // 计算本周五的时间
-  const thisFriday = new Date(now);
-  const daysSinceFriday = (now.getDay() - MATCH_DAY + 7) % 7;
-  thisFriday.setDate(now.getDate() - daysSinceFriday);
-  thisFriday.setHours(MATCH_HOUR, MATCH_MINUTE, 0, 0);
+  // 计算本周三的时间
+  const thisWednesday = new Date(now);
+  const daysSinceWednesday = (now.getDay() - MATCH_DAY + 7) % 7;
+  thisWednesday.setDate(now.getDate() - daysSinceWednesday);
+  thisWednesday.setHours(MATCH_HOUR, MATCH_MINUTE, 0, 0);
   
-  // 计算下周五的时间
-  const nextFriday = new Date(thisFriday);
-  nextFriday.setDate(nextFriday.getDate() + 7);
+  // 计算下周三的时间
+  const nextWednesday = new Date(thisWednesday);
+  nextWednesday.setDate(nextWednesday.getDate() + 7);
   
-  // 匹配时间 = 本周五 18:00
-  const matchTime = thisFriday.getTime();
+  // 匹配时间 = 本周三 18:00
+  const matchTime = thisWednesday.getTime();
   
   // 展示结束时间 = 匹配时间 + 5 天
   const displayEndTime = matchTime + (DISPLAY_DAYS * 24 * 60 * 60 * 1000);
   
-  // 如果当前时间还没到本周五匹配时间，返回本周五
+  // 如果当前时间还没到本周三匹配时间，返回本周三
   if (now.getTime() < matchTime) {
-    return thisFriday;
+    return thisWednesday;
   }
   
-  // 如果当前时间已经超过展示期，返回下周五
+  // 如果当前时间已经超过展示期，返回下周三
   if (now.getTime() >= displayEndTime) {
-    return nextFriday;
+    return nextWednesday;
   }
   
-  // 如果当前时间在展示期内，仍然返回下周五（因为这是下一轮匹配）
-  return nextFriday;
+  // 如果当前时间在展示期内，仍然返回下周三（因为这是下一轮匹配）
+  return nextWednesday;
 }
 
 function getCountdownState(now: Date = new Date()): CountdownState {

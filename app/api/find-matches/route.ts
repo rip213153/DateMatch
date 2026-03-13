@@ -50,7 +50,7 @@ function getNextMatchTime(now: Date = new Date()): number {
     nextWednesday.setDate(nextWednesday.getDate() + 7);
   }
   
-  // 匹配时间 = 下周五 18:00
+  // 匹配时间 = 下周三 18:00
   const matchTime = nextWednesday.getTime();
   
   // 展示结束时间 = 匹配时间 + 5 天
@@ -98,39 +98,39 @@ export async function POST(request: Request) {
 
     const now = new Date();
     
-    // 计算本周五 18:00 的时间
+    // 计算本周三 18:00 的时间
     const today = new Date(now);
-    const daysSinceThisWeekFriday = (now.getDay() - MATCH_DAY + 7) % 7;
-    const thisFriday = new Date(now);
-    thisFriday.setDate(now.getDate() - daysSinceThisWeekFriday);
-    thisFriday.setHours(MATCH_HOUR, MATCH_MINUTE, 0, 0);
+    const daysSinceThisWeekWednesday = (now.getDay() - MATCH_DAY + 7) % 7;
+    const thisWednesday = new Date(now);
+    thisWednesday.setDate(now.getDate() - daysSinceThisWeekWednesday);
+    thisWednesday.setHours(MATCH_HOUR, MATCH_MINUTE, 0, 0);
     
-    // 计算下周五 18:00 的时间
-    const nextFriday = new Date(thisFriday);
-    nextFriday.setDate(nextFriday.getDate() + 7);
+    // 计算下周三 18:00 的时间
+    const nextWednesday = new Date(thisWednesday);
+    nextWednesday.setDate(nextWednesday.getDate() + 7);
     
     // 计算展示结束时间 (匹配时间 + 5 天)
-    const displayEndTime = new Date(thisFriday);
-    displayEndTime.setDate(thisFriday.getDate() + DISPLAY_DAYS);
+    const displayEndTime = new Date(thisWednesday);
+    displayEndTime.setDate(thisWednesday.getDate() + DISPLAY_DAYS);
     
     const currentTime = now.getTime();
-    const fridayTime = thisFriday.getTime();
+    const wednesdayTime = thisWednesday.getTime();
     const endTime = displayEndTime.getTime();
-    const nextMatchTime = nextFriday.getTime();
+    const nextMatchTime = nextWednesday.getTime();
     
     // 判断当前是否在展示期内
-    const isInDisplayPeriod = currentTime >= fridayTime && currentTime < endTime;
+    const isInDisplayPeriod = currentTime >= wednesdayTime && currentTime < endTime;
     
-    // 如果不在展示期内，返回空数组
-    if (!isInDisplayPeriod) {
-      return NextResponse.json({
-        success: true,
-        matches: [],
-        totalMatches: 0,
-        currentUser: buildCurrentUserPayload(result.currentUser as any),
-        matchAt: nextMatchTime,
-      });
-    }
+    // 强制返回匹配结果，不检查时间
+    // if (!isInDisplayPeriod) {
+    //   return NextResponse.json({
+    //     success: true,
+    //     matches: [],
+    //     totalMatches: 0,
+    //     currentUser: buildCurrentUserPayload(result.currentUser as any),
+    //     matchAt: nextMatchTime,
+    //   });
+    // }
     
     // 在展示期内，返回匹配结果
     const response = NextResponse.json({
@@ -143,7 +143,7 @@ export async function POST(request: Request) {
     
     // 如果是刚进入展示期 (1 小时内)，发送邮件通知
     const oneHourInMs = 60 * 60 * 1000;
-    const isJustStarted = currentTime >= fridayTime && currentTime < fridayTime + oneHourInMs;
+    const isJustStarted = currentTime >= wednesdayTime && currentTime < wednesdayTime + oneHourInMs;
     
     if (isJustStarted && result.matches.length > 0) {
       try {
@@ -200,38 +200,38 @@ export async function GET(request: Request) {
 
     const now = new Date();
     
-    // 计算本周五 18:00 的时间
-    const daysSinceThisWeekFriday = (now.getDay() - MATCH_DAY + 7) % 7;
-    const thisFriday = new Date(now);
-    thisFriday.setDate(now.getDate() - daysSinceThisWeekFriday);
-    thisFriday.setHours(MATCH_HOUR, MATCH_MINUTE, 0, 0);
+    // 计算本周三 18:00 的时间
+    const daysSinceThisWeekWednesday = (now.getDay() - MATCH_DAY + 7) % 7;
+    const thisWednesday = new Date(now);
+    thisWednesday.setDate(now.getDate() - daysSinceThisWeekWednesday);
+    thisWednesday.setHours(MATCH_HOUR, MATCH_MINUTE, 0, 0);
     
-    // 计算下周五 18:00 的时间
-    const nextFriday = new Date(thisFriday);
-    nextFriday.setDate(nextFriday.getDate() + 7);
+    // 计算下周三 18:00 的时间
+    const nextWednesday = new Date(thisWednesday);
+    nextWednesday.setDate(nextWednesday.getDate() + 7);
     
     // 计算展示结束时间 (匹配时间 + 5 天)
-    const displayEndTime = new Date(thisFriday);
-    displayEndTime.setDate(thisFriday.getDate() + DISPLAY_DAYS);
+    const displayEndTime = new Date(thisWednesday);
+    displayEndTime.setDate(thisWednesday.getDate() + DISPLAY_DAYS);
     
     const currentTime = now.getTime();
-    const fridayTime = thisFriday.getTime();
+    const wednesdayTime = thisWednesday.getTime();
     const endTime = displayEndTime.getTime();
-    const nextMatchTime = nextFriday.getTime();
+    const nextMatchTime = nextWednesday.getTime();
     
     // 判断当前是否在展示期内
-    const isInDisplayPeriod = currentTime >= fridayTime && currentTime < endTime;
+    const isInDisplayPeriod = currentTime >= wednesdayTime && currentTime < endTime;
     
-    // 如果不在展示期内，返回空数组
-    if (!isInDisplayPeriod) {
-      return NextResponse.json({
-        success: true,
-        matches: [],
-        totalMatches: 0,
-        currentUser: buildCurrentUserPayload(result.currentUser as any),
-        matchAt: nextMatchTime,
-      });
-    }
+    // 强制返回匹配结果，不检查时间
+    // if (!isInDisplayPeriod) {
+    //   return NextResponse.json({
+    //     success: true,
+    //     matches: [],
+    //     totalMatches: 0,
+    //     currentUser: buildCurrentUserPayload(result.currentUser as any),
+    //     matchAt: nextMatchTime,
+    //   });
+    // }
     
     // 在展示期内，返回匹配结果
     const response = NextResponse.json({
@@ -244,7 +244,7 @@ export async function GET(request: Request) {
     
     // 如果是刚进入展示期 (1 小时内)，发送邮件通知
     const oneHourInMs = 60 * 60 * 1000;
-    const isJustStarted = currentTime >= fridayTime && currentTime < fridayTime + oneHourInMs;
+    const isJustStarted = currentTime >= wednesdayTime && currentTime < wednesdayTime + oneHourInMs;
     
     if (isJustStarted && result.matches.length > 0) {
       try {

@@ -20,7 +20,7 @@ function getNextMatchTime(now: Date = new Date()): number {
     nextWednesday.setDate(nextWednesday.getDate() + 7);
   }
   
-  // 匹配时间 = 下周五 18:00
+  // 匹配时间 = 下周三 18:00
   const matchTime = nextWednesday.getTime();
   
   // 展示结束时间 = 匹配时间 + 5 天

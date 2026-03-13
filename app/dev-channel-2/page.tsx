@@ -1,5 +1,6 @@
 "use client";
 
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -68,34 +69,34 @@ const MATCH_MINUTE = 0;
 const DISPLAY_DAYS = 5; // 匹配结果展示 5 天
 
 function getNextMatchTime(now: Date = new Date()): number {
-  // 计算本周五的时间
-  const thisFriday = new Date(now);
-  const daysSinceFriday = (now.getDay() - MATCH_DAY + 7) % 7;
-  thisFriday.setDate(now.getDate() - daysSinceFriday);
-  thisFriday.setHours(MATCH_HOUR, MATCH_MINUTE, 0, 0);
+  // 计算本周三的时间
+  const thisWednesday = new Date(now);
+  const daysSinceWednesday = (now.getDay() - MATCH_DAY + 7) % 7;
+  thisWednesday.setDate(now.getDate() - daysSinceWednesday);
+  thisWednesday.setHours(MATCH_HOUR, MATCH_MINUTE, 0, 0);
   
-  // 计算下周五的时间
-  const nextFriday = new Date(thisFriday);
-  nextFriday.setDate(nextFriday.getDate() + 7);
+  // 计算下周三的时间
+  const nextWednesday = new Date(thisWednesday);
+  nextWednesday.setDate(nextWednesday.getDate() + 7);
   
-  // 匹配时间 = 本周五 18:00
-  const matchTime = thisFriday.getTime();
+  // 匹配时间 = 本周三 18:00
+  const matchTime = thisWednesday.getTime();
   
   // 展示结束时间 = 匹配时间 + 5 天
   const displayEndTime = matchTime + (DISPLAY_DAYS * 24 * 60 * 60 * 1000);
   
-  // 如果当前时间还没到本周五匹配时间，返回本周五
+  // 如果当前时间还没到本周三匹配时间，返回本周三
   if (now.getTime() < matchTime) {
-    return thisFriday.getTime();
+    return thisWednesday.getTime();
   }
   
-  // 如果当前时间已经超过展示期，返回下周五
+  // 如果当前时间已经超过展示期，返回下周三
   if (now.getTime() >= displayEndTime) {
-    return nextFriday.getTime();
+    return nextWednesday.getTime();
   }
   
-  // 如果当前时间在展示期内，仍然返回下周五（因为这是下一轮匹配）
-  return nextFriday.getTime();
+  // 如果当前时间在展示期内，仍然返回下周三（因为这是下一轮匹配）
+  return nextWednesday.getTime();
 }
 
 const glassCardClass =
@@ -229,17 +230,17 @@ export default function DevChannel2Page() {
     return () => clearInterval(timer);
   }, []);
   
-  // 判断逻辑瞬间变得极其简单且可靠
+  // 强制返回 true，直接显示匹配结果
   const isMatchReady = useMemo(() => {
-    return now >= targetTime;
-  }, [now, targetTime]);
+    return true;
+  }, []);
 
   // 核心：如果时间没到，activeMatch 永远是 null，无论 matches 里有什么数据
   const activeMatch = useMemo(() => {
     // 增加一个 loading 状态判断，确保数据真正加载回来前，不会提前渲染卡片
-    if (!isMatchReady || loadingMatches) return null;
+    if ( loadingMatches) return null;
     return matches[activeCardIndex] ?? null;
-  }, [matches, activeCardIndex, isMatchReady, loadingMatches]);
+  }, [matches, activeCardIndex, loadingMatches]);
 
   const displayHighlights = useMemo(() => {
     if (!activeMatch) return [] as string[];
@@ -439,16 +440,6 @@ export default function DevChannel2Page() {
   const loadMatches = async () => {
     if (!currentUser || checkingAuth || !isAuthenticated) return;
     
-    // 如果前端判定时间没到，直接拒绝向 API 发请求
-    const now = new Date().getTime();
-    
-    if (now < targetTime) {
-      setMatches([]);
-      setActiveCardIndex(0);
-      setLoadingMatches(false);
-      return;
-    }
-    
     setLoadingMatches(true);
     setError(null);
 
@@ -477,10 +468,10 @@ export default function DevChannel2Page() {
     if (!currentUser || checkingAuth || !isAuthenticated) return;
     
     // 只要时间到了，就尝试去加载
-    if (isMatchReady) {
+    
       void loadMatches();
-    }
-  }, [currentUser, isAuthenticated, isMatchReady, checkingAuth]);
+    
+  }, [currentUser, isAuthenticated, checkingAuth]);
 
   const nextCard = () => {
     if (matches.length <= 1) return;
