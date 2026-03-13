@@ -141,9 +141,9 @@ export async function POST(request: Request) {
       matchAt: nextMatchTime,
     });
     
-    // 如果是刚进入展示期 (1 小时内)，发送邮件通知
-    const oneHourInMs = 60 * 60 * 1000;
-    const isJustStarted = currentTime >= wednesdayTime && currentTime < wednesdayTime + oneHourInMs;
+    // 如果是刚进入展示期 (24 小时内)，发送邮件通知
+    const oneDayInMs = 24 * 60 * 60 * 1000;
+    const isJustStarted = currentTime >= wednesdayTime && currentTime < wednesdayTime + oneDayInMs;
     
     if (isJustStarted && result.matches.length > 0) {
       try {
