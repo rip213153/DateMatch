@@ -1,44 +1,36 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/database";
-import { profiles } from "@/lib/schema";
 import { eq } from "drizzle-orm";
+import { NextResponse } from "next/server";
+import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { getMatchSchedule, isOptedOutForRound } from "@/lib/match-schedule";
+import { profiles } from "@/lib/schema";
 
-const MATCH_DAY = 5; // 周五
-const MATCH_HOUR = 18;
-const MATCH_MINUTE = 0;
-const DISPLAY_DAYS = 5; // 匹配结果展示 5 天
+type MatchingStatus = "WAITING" | "MATCHED" | "VIEWED";
 
-function getNextMatchTime(now: Date = new Date()): number {
-  // 计算下一个周三的时间
-  const nextWednesday = new Date(now);
-  const daysUntilWednesday = (MATCH_DAY - now.getDay() + 7) % 7;
-  
-  nextWednesday.setDate(now.getDate() + daysUntilWednesday);
-  nextWednesday.setHours(MATCH_HOUR, MATCH_MINUTE, 0, 0);
-  
-  if (nextWednesday <= now) {
-    nextWednesday.setDate(nextWednesday.getDate() + 7);
-  }
-  
-  // 匹配时间 = 下周三 18:00
-  const matchTime = nextWednesday.getTime();
-  
-  // 展示结束时间 = 匹配时间 + 5 天
-  const displayEndTime = matchTime + (DISPLAY_DAYS * 24 * 60 * 60 * 1000);
-  
-  // 如果当前时间在展示期内，返回展示结束时间
-  // 如果当前时间还没到匹配时间，返回匹配时间
-  if (now.getTime() >= matchTime && now.getTime() < displayEndTime) {
-    return displayEndTime;
-  }
-  
-  return matchTime;
+function buildSchedulePayload(now: Date = new Date()) {
+  const schedule = getMatchSchedule(now);
+
+  return {
+    matchAt: schedule.countdownTargetAt,
+    releaseAt: schedule.releaseAt,
+    displayEndAt: schedule.displayEndAt,
+    nextReleaseAt: schedule.nextReleaseAt,
+    isInDisplayWindow: schedule.isInDisplayWindow,
+    phase: schedule.phase,
+  };
+}
+
+function resolveOptOutUntil(value: number | string | null | undefined): Date | null {
+  if (typeof value === "number") return new Date(value);
+  if (typeof value === "string" && value) return new Date(value);
+  return null;
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get("userId");
+    const mode = resolveQuizMode(searchParams.get("mode"));
+    const db = getDbForMode(mode);
 
     if (!userId) {
       return NextResponse.json({ error: "缺少 userId 参数" }, { status: 400 });
@@ -50,16 +42,13 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "用户不存在" }, { status: 404 });
     }
 
-    const userData = user[0];
-    
-    // 优先使用前端统一计算的时间，确保和首页完全一致
-    const now = new Date();
-    const targetTime = getNextMatchTime(now);
-
     return NextResponse.json({
       success: true,
-      matchingStatus: userData.matching_status || "WAITING",
-      matchAt: targetTime,
+      mode,
+      matchingStatus: (user[0].matching_status || "WAITING") as MatchingStatus,
+      optOutUntil: user[0].match_opt_out_until ? new Date(user[0].match_opt_out_until).getTime() : null,
+      isOptedOutForRound: isOptedOutForRound(user[0].match_opt_out_until),
+      ...buildSchedulePayload(),
     });
   } catch (error) {
     console.error("Error getting match status:", error);
@@ -70,37 +59,48 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const data = await request.json();
-    const { userId, status, matchAt } = data;
+    const { userId, status, matchAt, optOutUntil } = data as {
+      userId?: number | string;
+      status?: MatchingStatus;
+      matchAt?: number | string | null;
+      optOutUntil?: number | string | null;
+    };
+    const mode = resolveQuizMode(data?.mode);
+    const db = getDbForMode(mode);
 
     if (!userId) {
       return NextResponse.json({ error: "缺少 userId 参数" }, { status: 400 });
     }
 
-    if (!status || ![
-      "WAITING",
-      "MATCHED",
-      "VIEWED"
-    ].includes(status)) {
+    if (!status || !["WAITING", "MATCHED", "VIEWED"].includes(status)) {
       return NextResponse.json({ error: "无效的 matching_status" }, { status: 400 });
     }
 
-    // 优先使用前端传入的 matchAt；若未传入，则使用统一时间逻辑计算
-    const targetTime = matchAt ? (typeof matchAt === 'number' ? new Date(matchAt) : matchAt) : new Date(getNextMatchTime());
-
-    const updateData: { matching_status?: "WAITING" | "MATCHED" | "VIEWED"; match_at?: Date } = {
-      matching_status: status as "WAITING" | "MATCHED" | "VIEWED",
-      match_at: targetTime,
-    };
+    const schedule = getMatchSchedule();
+    const resolvedMatchAt =
+      typeof matchAt === "number"
+        ? new Date(matchAt)
+        : typeof matchAt === "string" && matchAt
+          ? new Date(matchAt)
+          : new Date(schedule.releaseAt);
+    const resolvedOptOutUntil = resolveOptOutUntil(optOutUntil);
 
     await db
       .update(profiles)
-      .set(updateData)
+      .set({
+        matching_status: status,
+        match_at: resolvedMatchAt,
+        match_opt_out_until: resolvedOptOutUntil,
+      })
       .where(eq(profiles.id, Number(userId)));
 
     return NextResponse.json({
       success: true,
-      matchingStatus: status as "WAITING" | "MATCHED" | "VIEWED",
-      matchAt: targetTime.getTime(),
+      mode,
+      matchingStatus: status,
+      optOutUntil: resolvedOptOutUntil ? resolvedOptOutUntil.getTime() : null,
+      isOptedOutForRound: isOptedOutForRound(resolvedOptOutUntil),
+      ...buildSchedulePayload(),
     });
   } catch (error) {
     console.error("Error updating match status:", error);

@@ -13,10 +13,28 @@ function normalizeRedirect(value: string | null) {
   return value;
 }
 
+function applyModeToRedirect(redirect: string, mode: "romance" | "friendship") {
+  const [pathname, query = ""] = redirect.split("?");
+  const params = new URLSearchParams(query);
+
+  if (mode === "friendship") {
+    params.set("mode", "friendship");
+  } else {
+    params.delete("mode");
+  }
+
+  const nextQuery = params.toString();
+  return nextQuery ? `${pathname}?${nextQuery}` : pathname;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = useMemo(() => normalizeRedirect(searchParams.get("redirect")), [searchParams]);
+  const loginMode = useMemo(
+    () => (searchParams.get("mode") === "friendship" || redirectTo.includes("mode=friendship") ? "friendship" : "romance"),
+    [redirectTo, searchParams]
+  );
 
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -33,7 +51,7 @@ export default function LoginPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, mode: loginMode }),
       });
 
       const data = await res.json();
@@ -44,8 +62,9 @@ export default function LoginPage() {
         return;
       }
 
-      await AuthService.loginWithEmail(String(data?.email || email));
-      router.replace(redirectTo);
+      const resolvedMode = String(data?.mode || loginMode) === "friendship" ? "friendship" : "romance";
+      await AuthService.loginWithEmail(String(data?.email || email), resolvedMode);
+      router.replace(applyModeToRedirect(redirectTo, resolvedMode));
     } catch (err) {
       console.error("Login error:", err);
       setError("网络错误，请重试");
@@ -57,7 +76,7 @@ export default function LoginPage() {
     setSubmitting(true);
     setError("");
     await AuthService.devLogin();
-    router.replace(redirectTo);
+    router.replace(applyModeToRedirect(redirectTo, loginMode));
   };
 
   return (

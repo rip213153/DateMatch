@@ -1,6 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { db } from "@/lib/database";
+import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { profiles } from "@/lib/schema";
 import { createSessionToken } from "@/lib/session";
 
@@ -12,34 +12,46 @@ function isValidEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+async function findProfileByEmail(email: string, mode: "romance" | "friendship") {
+  const db = getDbForMode(mode);
+  const rows = await db
+    .select({ id: profiles.id, email: profiles.email })
+    .from(profiles)
+    .where(sql`lower(${profiles.email}) = lower(${email})`)
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     const email = normalizeEmail(String(body?.email ?? ""));
+    const requestedMode = resolveQuizMode(body?.mode);
 
     if (!isValidEmail(email)) {
       return NextResponse.json({ success: false, error: "请输入有效邮箱" }, { status: 400 });
     }
 
-    const rows = await db
-      .select({ id: profiles.id, email: profiles.email })
-      .from(profiles)
-      .where(sql`lower(${profiles.email}) = lower(${email})`)
-      .limit(1);
+    const requestedMatch = await findProfileByEmail(email, requestedMode);
+    const fallbackMode = requestedMode === "friendship" ? "romance" : "friendship";
+    const fallbackMatch = requestedMatch ? null : await findProfileByEmail(email, fallbackMode);
+    const matched = requestedMatch ?? fallbackMatch;
+    const matchedMode = requestedMatch ? requestedMode : fallbackMatch ? fallbackMode : null;
 
-    if (!rows.length) {
+    if (!matched || !matchedMode) {
       return NextResponse.json(
         { success: false, error: "邮箱未找到，请先完成测试并提交资料" },
         { status: 404 }
       );
     }
 
-    const matched = rows[0];
     const response = NextResponse.json({
       success: true,
       message: "验证通过，正在登录",
       email: matched.email,
       userId: matched.id,
+      mode: matchedMode,
     });
 
     response.cookies.set({

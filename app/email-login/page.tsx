@@ -22,6 +22,13 @@ export default function EmailLoginPage() {
 
   const token = searchParams.get("token")?.trim() ?? "";
   const redirectTo = useMemo(() => normalizeRedirect(searchParams.get("redirect")), [searchParams]);
+  const loginMode = useMemo(
+    () =>
+      searchParams.get("mode") === "friendship" || redirectTo.includes("mode=friendship")
+        ? "friendship"
+        : "romance",
+    [redirectTo, searchParams]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -38,7 +45,7 @@ export default function EmailLoginPage() {
       const res = await fetch("/api/auth/email-login/verify-token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, mode: loginMode }),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -51,13 +58,24 @@ export default function EmailLoginPage() {
         return;
       }
 
-      await AuthService.loginWithEmail(String(data.email));
+      const resolvedMode = String(data?.mode || loginMode) === "friendship" ? "friendship" : "romance";
+      await AuthService.loginWithEmail(String(data.email), resolvedMode);
 
       if (!cancelled) {
         setStatus("success");
         setMessage("验证成功，正在无感登录...");
         window.setTimeout(() => {
-          router.replace(redirectTo);
+          const [pathname, query = ""] = redirectTo.split("?");
+          const params = new URLSearchParams(query);
+
+          if (resolvedMode === "friendship") {
+            params.set("mode", "friendship");
+          } else {
+            params.delete("mode");
+          }
+
+          const nextQuery = params.toString();
+          router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname);
         }, 500);
       }
     };
@@ -67,7 +85,7 @@ export default function EmailLoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [router, token, redirectTo]);
+  }, [loginMode, router, token, redirectTo]);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-pink-100 via-rose-50 to-purple-100 px-4 py-10 sm:px-8">

@@ -33,10 +33,15 @@ export function normalizeProfile(row: ProfileRow): UserProfile {
     seeking: row.seeking,
     university: row.university,
     email: row.email,
+    wechat_open_id: row.wechat_open_id ?? null,
+    wechat_union_id: row.wechat_union_id ?? null,
+    wechat_notice_opt_in: row.wechat_notice_opt_in ?? false,
+    wechat_bound_at: row.wechat_bound_at ?? null,
     interests: normalizeInterests(row.interests),
     ideal_date: row.ideal_date,
     bio: row.bio ?? undefined,
     personality_profile: normalizePersonalityProfile(row.personality_profile),
+    match_opt_out_until: row.match_opt_out_until ?? null,
   };
 }
 

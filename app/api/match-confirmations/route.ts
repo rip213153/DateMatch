@@ -1,7 +1,16 @@
-﻿import { NextResponse } from "next/server";
-import { and, eq, inArray, or } from "drizzle-orm";
-import { db } from "@/lib/database";
-import { matchConfirmations } from "@/lib/schema";
+import { and, eq } from "drizzle-orm";
+import { NextResponse } from "next/server";
+import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { getMatchSchedule } from "@/lib/match-schedule";
+import {
+  buildMutualPairConfirmationState,
+  buildMutualPairConfirmationPatch,
+  buildMutualPairKey,
+  getMutualPairRowForUsers,
+  getMutualPairRowsForUser,
+} from "@/lib/mutual-matching";
+import { getProfileRowsForMode } from "@/lib/profile-updates";
+import { matchPairs } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -24,54 +33,19 @@ function toPositiveInt(value: unknown): number | null {
   return null;
 }
 
-function buildPairStatus(
-  rows: Array<{ user_id: number; target_user_id: number }>,
-  userId: number,
-  targetUserId: number
-): PairStatus {
-  const selfConfirmed = rows.some(
-    (row) => row.user_id === userId && row.target_user_id === targetUserId
-  );
-  const otherConfirmed = rows.some(
-    (row) => row.user_id === targetUserId && row.target_user_id === userId
-  );
-
+function buildEmptyStatus(): PairStatus {
   return {
-    selfConfirmed,
-    otherConfirmed,
-    canMessage: selfConfirmed && otherConfirmed,
+    selfConfirmed: false,
+    otherConfirmed: false,
+    canMessage: false,
   };
-}
-
-async function queryPairRows(userId: number, targetUserIds: number[]) {
-  if (targetUserIds.length === 0) {
-    return [] as Array<{ user_id: number; target_user_id: number }>;
-  }
-
-  return db
-    .select({
-      user_id: matchConfirmations.user_id,
-      target_user_id: matchConfirmations.target_user_id,
-    })
-    .from(matchConfirmations)
-    .where(
-      or(
-        and(
-          eq(matchConfirmations.user_id, userId),
-          inArray(matchConfirmations.target_user_id, targetUserIds)
-        ),
-        and(
-          inArray(matchConfirmations.user_id, targetUserIds),
-          eq(matchConfirmations.target_user_id, userId)
-        )
-      )
-    );
 }
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = toPositiveInt(searchParams.get("userId"));
+    const mode = resolveQuizMode(searchParams.get("mode"));
 
     if (!userId) {
       return NextResponse.json({ error: "缺少合法的 userId 参数" }, { status: 400 });
@@ -83,16 +57,54 @@ export async function GET(request: Request) {
       .filter((id): id is number => id !== null && id !== userId);
 
     const targetUserIds = Array.from(new Set(rawTargetIds));
-    const rows = await queryPairRows(userId, targetUserIds);
-
     const statuses: Record<string, PairStatus> = {};
+
+    if (targetUserIds.length === 0) {
+      return NextResponse.json({
+        success: true,
+        userId,
+        mode,
+        statuses,
+      });
+    }
+
+    const now = new Date();
+    const schedule = getMatchSchedule(now);
+    const profileRows = await getProfileRowsForMode(mode, now);
+    const userExists = profileRows.some((row) => Number(row.id) === userId);
+
+    if (!userExists) {
+      return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+    }
+
+    if (!schedule.isInDisplayWindow) {
+      for (const targetUserId of targetUserIds) {
+        statuses[String(targetUserId)] = buildEmptyStatus();
+      }
+
+      return NextResponse.json({
+        success: true,
+        userId,
+        mode,
+        statuses,
+      });
+    }
+
+    const pairRows = await getMutualPairRowsForUser(userId, mode, profileRows, schedule.releaseAt, now);
+    const pairMap = new Map(pairRows.map((pairRow) => [String(pairRow.user_a_id) + ":" + String(pairRow.user_b_id), pairRow]));
+
     for (const targetUserId of targetUserIds) {
-      statuses[String(targetUserId)] = buildPairStatus(rows, userId, targetUserId);
+      const { userAId, userBId } = buildMutualPairKey(userId, targetUserId);
+      const pairRow = pairMap.get(`${userAId}:${userBId}`);
+      statuses[String(targetUserId)] = pairRow
+        ? buildMutualPairConfirmationState(pairRow, userId, targetUserId)
+        : buildEmptyStatus();
     }
 
     return NextResponse.json({
       success: true,
       userId,
+      mode,
       statuses,
     });
   } catch (error) {
@@ -106,6 +118,7 @@ export async function POST(request: Request) {
     const payload = await request.json();
     const userId = toPositiveInt(payload.userId);
     const targetUserId = toPositiveInt(payload.targetUserId);
+    const mode = resolveQuizMode(payload.mode);
 
     if (!userId || !targetUserId) {
       return NextResponse.json({ error: "缺少合法的 userId/targetUserId" }, { status: 400 });
@@ -116,40 +129,59 @@ export async function POST(request: Request) {
     }
 
     const confirmed = payload.confirmed !== false;
+    const now = new Date();
+    const schedule = getMatchSchedule(now);
 
-    if (confirmed) {
-      await db
-        .insert(matchConfirmations)
-        .values({
-          user_id: userId,
-          target_user_id: targetUserId,
-          confirmed_at: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [matchConfirmations.user_id, matchConfirmations.target_user_id],
-          set: {
-            confirmed_at: new Date(),
-          },
-        });
-    } else {
-      await db
-        .delete(matchConfirmations)
-        .where(
-          and(
-            eq(matchConfirmations.user_id, userId),
-            eq(matchConfirmations.target_user_id, targetUserId)
-          )
-        );
+    if (!schedule.isInDisplayWindow) {
+      return NextResponse.json({ error: "当前不在可确认的匹配展示期" }, { status: 403 });
     }
 
-    const rows = await queryPairRows(userId, [targetUserId]);
-    const status = buildPairStatus(rows, userId, targetUserId);
+    const db = getDbForMode(mode);
+    const profileRows = await getProfileRowsForMode(mode, now);
+    const pairRow = await getMutualPairRowForUsers(
+      userId,
+      targetUserId,
+      mode,
+      profileRows,
+      schedule.releaseAt,
+      now
+    );
+
+    if (!pairRow) {
+      return NextResponse.json({ error: "当前轮次没有这组双向推荐" }, { status: 404 });
+    }
+
+    const { userAId, userBId } = buildMutualPairKey(userId, targetUserId);
+    await db
+      .update(matchPairs)
+      .set(buildMutualPairConfirmationPatch(userId, targetUserId, confirmed, now))
+      .where(
+        and(
+          eq(matchPairs.id, pairRow.id),
+          eq(matchPairs.user_a_id, userAId),
+          eq(matchPairs.user_b_id, userBId)
+        )
+      );
+
+    const updatedPairRow = await getMutualPairRowForUsers(
+      userId,
+      targetUserId,
+      mode,
+      profileRows,
+      schedule.releaseAt,
+      now
+    );
+
+    if (!updatedPairRow) {
+      return NextResponse.json({ error: "更新确认状态失败" }, { status: 500 });
+    }
 
     return NextResponse.json({
       success: true,
       userId,
       targetUserId,
-      status,
+      mode,
+      status: buildMutualPairConfirmationState(updatedPairRow, userId, targetUserId),
     });
   } catch (error) {
     console.error("Error updating match confirmation:", error);

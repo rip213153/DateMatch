@@ -1,9 +1,11 @@
-import { NextResponse } from "next/server";
 import { desc, eq, or } from "drizzle-orm";
-import { db } from "@/lib/database";
-import { chatMessages, profiles } from "@/lib/schema";
-import { getBestMatches } from "@/lib/matching";
+import { NextResponse } from "next/server";
+import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { getMatchSchedule } from "@/lib/match-schedule";
+import { getMutualPairRowsForUser, getMutualTargetUserId } from "@/lib/mutual-matching";
+import { getProfileRowsForMode } from "@/lib/profile-updates";
 import { normalizeProfiles } from "@/lib/profile-normalizer";
+import { chatMessages } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +44,7 @@ function toIsoString(value: unknown): string | null {
       const ms = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
       return new Date(ms).toISOString();
     }
+
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
@@ -52,20 +55,30 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const userId = toPositiveInt(searchParams.get("userId"));
+    const mode = resolveQuizMode(searchParams.get("mode"));
 
     if (!userId) {
-      return NextResponse.json({ error: "缺少合法的 userId 参数" }, { status: 400 });
+      return NextResponse.json({ error: "Missing valid userId" }, { status: 400 });
     }
 
-    const allUsers = normalizeProfiles(await db.select().from(profiles));
+    const db = getDbForMode(mode);
+    const now = new Date();
+    const profileRows = await getProfileRowsForMode(mode, now);
+    const allUsers = normalizeProfiles(profileRows);
     const currentUser = allUsers.find((user) => Number(user.id) === userId);
 
     if (!currentUser) {
-      return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const topMatches = getBestMatches(currentUser, allUsers, 5);
-    const topMatchMap = new Map(topMatches.map((item) => [Number(item.user.id), item]));
+    const schedule = getMatchSchedule(now);
+    const mutualPairRows = schedule.isInDisplayWindow
+      ? await getMutualPairRowsForUser(userId, mode, profileRows, schedule.releaseAt, now)
+      : [];
+
+    const pairScoreMap = new Map(
+      mutualPairRows.map((pairRow) => [getMutualTargetUserId(pairRow, userId), Number(pairRow.pair_score)])
+    );
     const userMap = new Map(allUsers.map((user) => [Number(user.id), user]));
 
     const messageRows = await db
@@ -80,12 +93,14 @@ export async function GET(request: Request) {
       .where(or(eq(chatMessages.sender_id, userId), eq(chatMessages.receiver_id, userId)))
       .orderBy(desc(chatMessages.created_at), desc(chatMessages.id));
 
-    const visibleContactIds = new Set<number>(topMatches.map((item) => Number(item.user.id)));
+    const visibleContactIds = new Set<number>(Array.from(pairScoreMap.keys()));
     const latestMessageMap = new Map<number, { content: string; createdAt: string | null }>();
 
     for (const row of messageRows) {
       const contactId: number = row.sender_id === userId ? row.receiver_id : row.sender_id;
       if (contactId === userId) continue;
+
+      visibleContactIds.add(contactId);
 
       if (!latestMessageMap.has(contactId)) {
         latestMessageMap.set(contactId, {
@@ -93,20 +108,15 @@ export async function GET(request: Request) {
           createdAt: toIsoString(row.created_at),
         });
       }
-
-      const isInboundFromContact = row.sender_id === contactId && row.receiver_id === userId;
-      if (isInboundFromContact) {
-        visibleContactIds.add(contactId);
-      }
     }
 
-    const rawContactItems = Array.from(visibleContactIds)
+    const contacts: ContactItem[] = Array.from(visibleContactIds)
       .map((contactId) => {
         const user = userMap.get(contactId);
         if (!user) return null;
 
         const lastMessage = latestMessageMap.get(contactId);
-        const topMatch = topMatchMap.get(contactId);
+        const pairScore = pairScoreMap.get(contactId);
 
         return {
           id: contactId,
@@ -119,8 +129,8 @@ export async function GET(request: Request) {
           ideal_date: user.ideal_date,
           bio: user.bio,
           interests: user.interests,
-          rankScore: topMatch?.match.overallScore ?? 0,
-          isTopMatch: Boolean(topMatch),
+          rankScore: pairScore ?? 0,
+          isTopMatch: typeof pairScore === "number",
         };
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
@@ -131,31 +141,22 @@ export async function GET(request: Request) {
         if (a.isTopMatch !== b.isTopMatch) return a.isTopMatch ? -1 : 1;
         if (a.rankScore !== b.rankScore) return b.rankScore - a.rankScore;
         return a.id - b.id;
-      });
-
-    const contacts: ContactItem[] = rawContactItems.map((item) => ({
-      id: item.id,
-      name: item.name,
-      age: item.age,
-      university: item.university,
-      lastMessage: item.lastMessage,
-      lastMessageAt: item.lastMessageAt,
-      email: item.email,
-      ideal_date: item.ideal_date,
-      bio: item.bio,
-      interests: item.interests,
-    }));
+      })
+      .map(({ rankScore: _rankScore, isTopMatch: _isTopMatch, ...item }) => item);
 
     return NextResponse.json({
       success: true,
+      mode,
       currentUser: {
         id: currentUser.id,
         name: currentUser.name,
+        wechatConnected: Boolean(currentUser.wechat_open_id),
+        wechatNoticeOptIn: Boolean(currentUser.wechat_notice_opt_in),
       },
       contacts,
     });
   } catch (error) {
     console.error("Error fetching chat contacts:", error);
-    return NextResponse.json({ error: "获取联系人失败" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch chat contacts" }, { status: 500 });
   }
 }

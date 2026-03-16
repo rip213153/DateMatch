@@ -150,7 +150,7 @@ export async function sendMatchResultEmail(params: {
 
           <div style="margin: 30px 0; padding: 20px; background: #fff8fb; border-radius: 12px; border: 1px dashed #db2777;">
             <p style="margin:0 0 8px;font-size:18px;color:#db2777;font-weight:bold;">请复制以下链接到浏览器查看结果：</p>
-            <p style="margin:0;word-break:break-all;font-size:18px;color:#1f1f1f;font-weight:bold;">http://39.107.110.145:3000/dev-channel-2</p>
+            <p style="margin:0;word-break:break-all;font-size:18px;color:#1f1f1f;font-weight:bold;">http://39.107.110.145:3000</p>
           </div>
 
           <p style="margin:20px 0 0;font-size:16px;color:#8c7a80;">匹配结果将在 5 天内有效，请及时查看。</p>

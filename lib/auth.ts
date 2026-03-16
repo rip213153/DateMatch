@@ -3,6 +3,8 @@ const AUTH_EXPIRES_AT_KEY = "datematch_auth_expires_at";
 const AUTH_IDENTITY_KEY = "datematch_auth_identity";
 const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+export type AuthMode = "romance" | "friendship";
+
 export type AuthCheckResult = {
   isAuthenticated: boolean;
 };
@@ -59,13 +61,13 @@ export class AuthService {
     return { success: true };
   }
 
-  static async loginWithEmail(rawEmail: string): Promise<AuthLoginResult> {
+  static async loginWithEmail(rawEmail: string, mode: AuthMode = "romance"): Promise<AuthLoginResult> {
     const email = rawEmail.trim().toLowerCase();
     if (!email) {
       return { success: false, message: "邮箱不能为空" };
     }
 
-    saveAuthSession(`email:${email}`);
+    saveAuthSession(`email:${mode}:${email}`);
     return { success: true };
   }
 

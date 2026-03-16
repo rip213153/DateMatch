@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
 import { and, asc, eq, or } from "drizzle-orm";
-import { db } from "@/lib/database";
-import { chatMessages, profiles } from "@/lib/schema";
-import { getBestMatches } from "@/lib/matching";
-import { normalizeProfiles } from "@/lib/profile-normalizer";
+import { NextResponse } from "next/server";
+import type { QuizMode } from "@/app/data/types";
+import { createChatNotificationEvent } from "@/lib/chat-notification-events";
+import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { getMatchSchedule } from "@/lib/match-schedule";
+import { hasMutualPairForUsers } from "@/lib/mutual-matching";
+import { getProfileRowsForMode } from "@/lib/profile-updates";
+import { chatMessages } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -22,30 +25,25 @@ function toIsoString(value: unknown): string | null {
   if (typeof value === "number") {
     const ms = value > 1_000_000_000_000 ? value : value * 1000;
     const date = new Date(ms);
-    if (Number.isNaN(date.getTime())) {
-      console.error("Invalid date from timestamp:", value, "converted to:", ms);
-      return null;
-    }
-    return date.toISOString();
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
   if (typeof value === "string") {
     const numeric = Number(value);
     if (!Number.isNaN(numeric) && Number.isFinite(numeric)) {
       const ms = numeric > 1_000_000_000_000 ? numeric : numeric * 1000;
       const date = new Date(ms);
-      if (Number.isNaN(date.getTime())) {
-        console.error("Invalid date from timestamp string:", value, "converted to:", ms);
-        return null;
-      }
-      return date.toISOString();
+      return Number.isNaN(date.getTime()) ? null : date.toISOString();
     }
+
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
   return null;
 }
 
-async function getPairRows(userId: number, targetUserId: number) {
+async function getPairRows(mode: QuizMode, userId: number, targetUserId: number) {
+  const db = getDbForMode(mode);
+
   return db
     .select({
       id: chatMessages.id,
@@ -64,12 +62,25 @@ async function getPairRows(userId: number, targetUserId: number) {
     .orderBy(asc(chatMessages.created_at), asc(chatMessages.id));
 }
 
-async function getTopMatchIdSet(userId: number) {
-  const allUsers = normalizeProfiles(await db.select().from(profiles));
-  const currentUser = allUsers.find((user) => Number(user.id) === userId);
-  if (!currentUser) return { user: null, ids: new Set<number>() };
-  const ids = new Set(getBestMatches(currentUser, allUsers, 5).map((item) => Number(item.user.id)));
-  return { user: currentUser, ids };
+function countSenderMessagesSinceLastReply(
+  pairRows: Array<{ sender_id: number; receiver_id: number }>,
+  senderId: number,
+  receiverId: number
+) {
+  let count = 0;
+
+  for (const row of pairRows) {
+    if (row.sender_id === receiverId && row.receiver_id === senderId) {
+      count = 0;
+      continue;
+    }
+
+    if (row.sender_id === senderId && row.receiver_id === receiverId) {
+      count += 1;
+    }
+  }
+
+  return count;
 }
 
 export async function GET(request: Request) {
@@ -77,15 +88,42 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const userId = toPositiveInt(searchParams.get("userId"));
     const targetUserId = toPositiveInt(searchParams.get("targetUserId"));
+    const mode = resolveQuizMode(searchParams.get("mode"));
 
     if (!userId || !targetUserId) {
-      return NextResponse.json({ error: "缺少合法的 userId/targetUserId 参数" }, { status: 400 });
+      return NextResponse.json({ error: "Missing valid userId or targetUserId" }, { status: 400 });
     }
 
-    const rows = await getPairRows(userId, targetUserId);
+    const now = new Date();
+    const db = getDbForMode(mode);
+    const [profileRows, rows] = await Promise.all([
+      getProfileRowsForMode(mode, now),
+      getPairRows(mode, userId, targetUserId),
+    ]);
+
+    const senderExists = profileRows.some((row) => Number(row.id) === userId);
+    const receiverExists = profileRows.some((row) => Number(row.id) === targetUserId);
+
+    if (!senderExists || !receiverExists) {
+      return NextResponse.json({ error: "Chat user not found" }, { status: 404 });
+    }
+
+    const hasConversation = rows.length > 0;
+    const schedule = getMatchSchedule(now);
+    const canUseMutualPair =
+      schedule.isInDisplayWindow &&
+      (await hasMutualPairForUsers(userId, targetUserId, mode, profileRows, schedule.releaseAt, now));
+
+    if (!hasConversation && !canUseMutualPair) {
+      return NextResponse.json(
+        { error: "You can only access chats from your current mutual recommendations." },
+        { status: 403 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
+      mode,
       messages: rows.map((row) => ({
         id: row.id,
         senderId: row.sender_id,
@@ -96,64 +134,75 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("Error fetching chat messages:", error);
-    return NextResponse.json({ error: "获取聊天消息失败" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch chat messages" }, { status: 500 });
   }
 }
 
 export async function POST(request: Request) {
   try {
     const payload = await request.json();
-    const senderId = toPositiveInt(payload.senderId);
-    const receiverId = toPositiveInt(payload.receiverId);
-    const content = typeof payload.content === "string" ? payload.content.trim() : "";
+    const senderId = toPositiveInt(payload?.senderId);
+    const receiverId = toPositiveInt(payload?.receiverId);
+    const content = typeof payload?.content === "string" ? payload.content.trim() : "";
+    const mode = resolveQuizMode(payload?.mode);
 
     if (!senderId || !receiverId) {
-      return NextResponse.json({ error: "缺少合法的 senderId/receiverId" }, { status: 400 });
+      return NextResponse.json({ error: "Missing valid senderId or receiverId" }, { status: 400 });
     }
 
     if (senderId === receiverId) {
-      return NextResponse.json({ error: "不能给自己发消息" }, { status: 400 });
+      return NextResponse.json({ error: "Cannot send messages to yourself" }, { status: 400 });
     }
 
     if (!content) {
-      return NextResponse.json({ error: "消息内容不能为空" }, { status: 400 });
+      return NextResponse.json({ error: "Message content cannot be empty" }, { status: 400 });
     }
 
     if (content.length > 1000) {
-      return NextResponse.json({ error: "消息长度不能超过 1000 字" }, { status: 400 });
+      return NextResponse.json({ error: "Message content must be 1000 characters or fewer" }, { status: 400 });
     }
 
-    const [senderInfo, receiverInfo, pairRows] = await Promise.all([
-      getTopMatchIdSet(senderId),
-      getTopMatchIdSet(receiverId),
-      getPairRows(senderId, receiverId),
+    const now = new Date();
+    const db = getDbForMode(mode);
+    const [profileRows, pairRows] = await Promise.all([
+      getProfileRowsForMode(mode, now),
+      getPairRows(mode, senderId, receiverId),
     ]);
 
-    if (!senderInfo.user || !receiverInfo.user) {
-      return NextResponse.json({ error: "聊天用户不存在" }, { status: 404 });
+    const senderExists = profileRows.some((row) => Number(row.id) === senderId);
+    const receiverExists = profileRows.some((row) => Number(row.id) === receiverId);
+
+    if (!senderExists || !receiverExists) {
+      return NextResponse.json({ error: "Chat user not found" }, { status: 404 });
     }
 
-    const senderHasReceiverInTopFive = senderInfo.ids.has(receiverId);
-    const receiverHasSenderInTopFive = receiverInfo.ids.has(senderId);
     const hasConversation = pairRows.length > 0;
-    const senderMessageCount = pairRows.filter((row) => row.sender_id === senderId).length;
-    const receiverHasReplied = pairRows.some((row) => row.sender_id === receiverId && row.receiver_id === senderId);
+    const senderMessagesSinceLastReply = countSenderMessagesSinceLastReply(pairRows, senderId, receiverId);
+    const schedule = getMatchSchedule(now);
+    const canUseMutualPair =
+      schedule.isInDisplayWindow &&
+      (await hasMutualPairForUsers(senderId, receiverId, mode, profileRows, schedule.releaseAt, now));
 
-    if (!senderHasReceiverInTopFive && !hasConversation) {
-      return NextResponse.json({ error: "对方当前不在你的前五匹配中，暂时不能主动发起消息" }, { status: 403 });
+    if (!canUseMutualPair && !hasConversation) {
+      return NextResponse.json(
+        { error: "The other user is not currently in your mutual recommendations." },
+        { status: 403 }
+      );
     }
 
-    if (!receiverHasSenderInTopFive && !receiverHasReplied && senderMessageCount >= 1) {
-      return NextResponse.json({ error: "对方回复前，你现在只能先发送 1 条消息" }, { status: 403 });
+    if (senderMessagesSinceLastReply >= 1) {
+      return NextResponse.json(
+        { error: "You can only send one opening message until the other user replies." },
+        { status: 403 }
+      );
     }
-
     const [inserted] = await db
       .insert(chatMessages)
       .values({
         sender_id: senderId,
         receiver_id: receiverId,
         content,
-        created_at: new Date(),
+        created_at: now,
       })
       .returning({
         id: chatMessages.id,
@@ -163,8 +212,20 @@ export async function POST(request: Request) {
         created_at: chatMessages.created_at,
       });
 
+    let notificationEvent = null;
+    try {
+      notificationEvent = await createChatNotificationEvent(mode, {
+        messageId: inserted.id,
+        senderId,
+        receiverId,
+      });
+    } catch (notificationError) {
+      console.error("Error creating chat notification event:", notificationError);
+    }
+
     return NextResponse.json({
       success: true,
+      mode,
       message: {
         id: inserted.id,
         senderId: inserted.sender_id,
@@ -172,9 +233,10 @@ export async function POST(request: Request) {
         content: inserted.content,
         createdAt: toIsoString(inserted.created_at),
       },
+      notificationEvent,
     });
   } catch (error) {
     console.error("Error sending chat message:", error);
-    return NextResponse.json({ error: "发送消息失败" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to send chat message" }, { status: 500 });
   }
 }
