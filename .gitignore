@@ -36,3 +36,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local databases
+*.db
+*.db-shm
+*.db-wal
+
+# local backups and temp files
+/backups/
+/tmp_head_*.txt

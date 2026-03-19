@@ -365,6 +365,13 @@ export default function ChatPage() {
 
     if (!currentUserId) return;
 
+    if (contact.id === activeContactId) {
+      const sentByCurrentUser = messages.some((message) => message.senderId === currentUserId);
+      const sentByTargetUser = messages.some((message) => message.senderId === contact.id);
+      setEmailUnlocked(sentByCurrentUser && sentByTargetUser);
+      return;
+    }
+
     setCheckingEmailAccess(true);
     try {
       const response = await fetch(`/api/chat/messages?userId=${currentUserId}&targetUserId=${contact.id}&mode=${mode}`, {

@@ -33,13 +33,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: "请输入有效邮箱" }, { status: 400 });
     }
 
-    const requestedMatch = await findProfileByEmail(email, requestedMode);
-    const fallbackMode = requestedMode === "friendship" ? "romance" : "friendship";
-    const fallbackMatch = requestedMatch ? null : await findProfileByEmail(email, fallbackMode);
-    const matched = requestedMatch ?? fallbackMatch;
-    const matchedMode = requestedMatch ? requestedMode : fallbackMatch ? fallbackMode : null;
+    const matched = await findProfileByEmail(email, requestedMode);
 
-    if (!matched || !matchedMode) {
+    if (!matched) {
       return NextResponse.json(
         { success: false, error: "邮箱未找到，请先完成测试并提交资料" },
         { status: 404 }
@@ -51,12 +47,12 @@ export async function POST(request: Request) {
       message: "验证通过，正在登录",
       email: matched.email,
       userId: matched.id,
-      mode: matchedMode,
+      mode: requestedMode,
     });
 
     response.cookies.set({
       name: "datematch_session",
-      value: createSessionToken(matched.email),
+      value: createSessionToken(matched.email, requestedMode),
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",

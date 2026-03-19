@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { BackButton } from "@/components/ui/back-button";
-import type { FriendshipTraits, PersonalityTraits, QuizMode } from "@/app/data/types";
+import type { QuizMode } from "@/app/data/types";
 import {
   FRIENDSHIP_DEFAULT_PROFILE,
   FRIENDSHIP_TITLE_MAP,
@@ -133,6 +133,7 @@ function ResultsContent() {
   const searchParams = useSearchParams();
   const [downloading, setDownloading] = useState(false);
   const [activeTraitKey, setActiveTraitKey] = useState<string | null>(null);
+  const [chartReady, setChartReady] = useState(false);
 
   const mode = detectQuizMode(searchParams.get("mode"));
   const modeConfig = RESULTS_MODE_CONFIG[mode];
@@ -167,6 +168,14 @@ function ResultsContent() {
   const activeTrait = activeTraitKey ? traitCards.find((item) => item.key === activeTraitKey) ?? null : null;
   const { title, description } = getTitleAndDescription(profile, traitMeta, titleMap);
   const { strengths, growthAreas } = buildHighlights(profile, traitMeta);
+
+  useEffect(() => {
+    const rafId = window.requestAnimationFrame(() => {
+      setChartReady(true);
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, []);
 
   const downloadResultCard = async () => {
     if (downloading) return;
@@ -249,14 +258,20 @@ function ResultsContent() {
             {modeConfig.titlePrefix}
           </h2>
           <div className="h-[350px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart data={chartData}>
-                <PolarGrid stroke="#fbcfe8" />
-                <PolarAngleAxis dataKey="trait" tick={{ fill: "#4b5563", fontSize: 13 }} />
-                <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
-                <Radar dataKey="value" stroke="#ec4899" fill="#ec4899" fillOpacity={0.4} />
-              </RadarChart>
-            </ResponsiveContainer>
+            {chartReady ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <RadarChart data={chartData}>
+                  <PolarGrid stroke="#fbcfe8" />
+                  <PolarAngleAxis dataKey="trait" tick={{ fill: "#4b5563", fontSize: 13 }} />
+                  <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
+                  <Radar dataKey="value" stroke="#ec4899" fill="#ec4899" fillOpacity={0.4} />
+                </RadarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center rounded-[1.5rem] bg-white/60">
+                <div className="h-44 w-44 animate-pulse rounded-full border border-pink-100 bg-gradient-to-br from-pink-50 to-purple-50" />
+              </div>
+            )}
           </div>
 
           <div className="mt-8 flex items-center justify-between gap-3">

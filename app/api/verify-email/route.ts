@@ -13,6 +13,15 @@ function hashValue(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function resolveSessionMode(redirect: string) {
+  try {
+    const redirectUrl = new URL(redirect, "http://localhost");
+    return redirectUrl.searchParams.get("mode") === "friendship" ? "friendship" : "romance";
+  } catch {
+    return "romance";
+  }
+}
+
 function redirectToLoginWithError(origin: string, code: string) {
   const loginUrl = new URL("/login", origin);
   loginUrl.searchParams.set("error", code);
@@ -56,7 +65,7 @@ export async function GET(request: Request) {
       .set({ used_at: now })
       .where(eq(emailLoginTokens.id, row.id));
 
-    const sessionToken = createSessionToken(row.email);
+    const sessionToken = createSessionToken(row.email, resolveSessionMode(redirect));
     const target = new URL(redirect, url.origin);
     const response = NextResponse.redirect(target);
 

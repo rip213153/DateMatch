@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, Suspense, isValidElement, useMemo, useState } from "react";
+import { ReactNode, Suspense, isValidElement, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Heart, Sparkles, Users } from "lucide-react";
@@ -139,6 +139,9 @@ function QuizContent() {
   const [answers, setAnswers] = useState<AnyAnswer[]>([]);
   const [isCompletedModalOpen, setIsCompletedModalOpen] = useState(false);
   const [completedProfile, setCompletedProfile] = useState<AnyProfile | null>(null);
+  const [selectedAnswerIndex, setSelectedAnswerIndex] = useState<number | null>(null);
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const quizConfig = useMemo(
     () =>
@@ -180,41 +183,74 @@ function QuizContent() {
   const totalQuestions = Math.max(questions.length, 1);
   const progress = questions.length ? ((currentQuestion + 1) / totalQuestions) * 100 : 0;
   const activeQuestion = questions[currentQuestion];
+  const resultsHref = mode === "friendship" ? "/results?mode=friendship" : "/results";
+
+  useEffect(() => {
+    return () => {
+      if (advanceTimerRef.current) {
+        clearTimeout(advanceTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    router.prefetch(resultsHref);
+  }, [resultsHref, router]);
 
   const goToResults = (profile: AnyProfile) => {
-    router.push(`/results?mode=${mode}&profile=${encodeURIComponent(JSON.stringify(profile))}`);
+    router.replace(`/results?mode=${mode}&profile=${encodeURIComponent(JSON.stringify(profile))}`);
   };
 
   const handleAnswer = (answer: AnyAnswer) => {
-    if (isCompletedModalOpen || !activeQuestion) return;
+    if (isCompletedModalOpen || !activeQuestion || isAdvancing) return;
 
-    const nextAnswers = [...answers, answer];
-    setAnswers(nextAnswers);
+    const answerIndex = activeQuestion.answers.findIndex((item) => item.text === answer.text);
+    setSelectedAnswerIndex(answerIndex >= 0 ? answerIndex : null);
+    setIsAdvancing(true);
 
-    if (currentQuestion < questions.length - 1) {
-      setCurrentQuestion((prev) => prev + 1);
-      return;
+    if (advanceTimerRef.current) {
+      clearTimeout(advanceTimerRef.current);
     }
 
-    const profile =
-      mode === "friendship"
-        ? (calculateAverageProfile(
-            nextAnswers as Array<{ traits: Record<string, number | undefined> }>,
-            FRIENDSHIP_DEFAULT_PROFILE as unknown as Record<string, number>,
-            FRIENDSHIP_TRAIT_KEYS as string[]
-          ) as unknown as FriendshipTraits)
-        : (calculateAverageProfile(
-            nextAnswers as Array<{ traits: Record<string, number | undefined> }>,
-            ROMANCE_DEFAULT_PROFILE as unknown as Record<string, number>,
-            ROMANCE_TRAIT_KEYS as string[]
-          ) as unknown as PersonalityTraits);
+    advanceTimerRef.current = setTimeout(() => {
+      const nextAnswers = [...answers, answer];
+      setAnswers(nextAnswers);
 
-    setCompletedProfile(profile);
-    setIsCompletedModalOpen(true);
+      if (currentQuestion < questions.length - 1) {
+        setCurrentQuestion((prev) => prev + 1);
+        setSelectedAnswerIndex(null);
+        setIsAdvancing(false);
+        return;
+      }
+
+      const profile =
+        mode === "friendship"
+          ? (calculateAverageProfile(
+              nextAnswers as Array<{ traits: Record<string, number | undefined> }>,
+              FRIENDSHIP_DEFAULT_PROFILE as unknown as Record<string, number>,
+              FRIENDSHIP_TRAIT_KEYS as string[]
+            ) as unknown as FriendshipTraits)
+          : (calculateAverageProfile(
+              nextAnswers as Array<{ traits: Record<string, number | undefined> }>,
+              ROMANCE_DEFAULT_PROFILE as unknown as Record<string, number>,
+              ROMANCE_TRAIT_KEYS as string[]
+            ) as unknown as PersonalityTraits);
+
+      setCompletedProfile(profile);
+      setIsCompletedModalOpen(true);
+      setSelectedAnswerIndex(null);
+      setIsAdvancing(false);
+    }, 170);
   };
 
   const handlePrevious = () => {
-    if (currentQuestion === 0 || isCompletedModalOpen) return;
+    if (currentQuestion === 0 || isCompletedModalOpen || isAdvancing) return;
+    if (advanceTimerRef.current) {
+      clearTimeout(advanceTimerRef.current);
+      advanceTimerRef.current = null;
+    }
+    setSelectedAnswerIndex(null);
+    setIsAdvancing(false);
     setAnswers((prev) => prev.slice(0, -1));
     setCurrentQuestion((prev) => Math.max(0, prev - 1));
   };
@@ -303,13 +339,13 @@ function QuizContent() {
             indicatorClassName={quizConfig.progressIndicatorClassName}
           />
 
-          <AnimatePresence mode="wait">
+          <AnimatePresence initial={false} mode="wait">
             <motion.div
               key={`${mode}-${currentQuestion}`}
-              initial={{ opacity: 0, x: 40, scale: 0.98 }}
+              initial={{ opacity: 0, x: 20, scale: 0.992 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: -40, scale: 0.98 }}
-              transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+              exit={{ opacity: 0, x: -16, scale: 0.992 }}
+              transition={{ type: "spring", stiffness: 320, damping: 32, mass: 0.9 }}
             >
               <div className="rounded-[1.75rem] border border-white/80 bg-white/85 p-6 shadow-sm sm:p-8">
                 <h2 className="mb-8 break-words text-center text-[1.35rem] font-semibold leading-relaxed tracking-[0.01em] text-gray-900 sm:mb-10 sm:px-4 sm:text-[1.8rem]">
@@ -320,14 +356,21 @@ function QuizContent() {
                   {activeQuestion.answers.map((answer, index) => (
                     <motion.div
                       key={index}
-                      initial={{ opacity: 0, y: 15 }}
+                      initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.08, ease: "easeOut" }}
+                      transition={{ delay: index * 0.035, duration: 0.22, ease: "easeOut" }}
                     >
                       <button
                         type="button"
                         onClick={() => handleAnswer(answer)}
-                        className="group w-full rounded-[1.35rem] border border-gray-100 bg-white px-6 py-5 text-left text-[15px] leading-relaxed text-gray-700 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-pink-200 hover:bg-pink-50/40 hover:text-gray-900 hover:shadow-[0_16px_36px_rgba(236,72,153,0.10)] focus:outline-none focus:ring-4 focus:ring-pink-500/10 focus:border-pink-300 active:scale-[0.985] active:bg-pink-50 sm:text-base"
+                        disabled={isAdvancing}
+                        className={`group w-full rounded-[1.35rem] border px-6 py-5 text-left text-[15px] leading-relaxed shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-200 ease-out focus:outline-none focus:ring-4 focus:ring-pink-500/10 sm:text-base ${
+                          selectedAnswerIndex === index
+                            ? "border-pink-300 bg-pink-50/90 text-gray-900 shadow-[0_18px_40px_rgba(236,72,153,0.14)] scale-[1.01]"
+                            : isAdvancing
+                              ? "border-gray-100 bg-white/85 text-gray-400 opacity-75"
+                              : "border-gray-100 bg-white text-gray-700 hover:-translate-y-0.5 hover:border-pink-200 hover:bg-pink-50/40 hover:text-gray-900 hover:shadow-[0_16px_36px_rgba(236,72,153,0.10)] active:scale-[0.985] active:bg-pink-50"
+                        }`}
                       >
                         <span className="block">{answer.text}</span>
                       </button>

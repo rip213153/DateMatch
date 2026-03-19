@@ -8,6 +8,7 @@ const SECRET =
 
 type SessionPayload = {
   email: string;
+  mode: "romance" | "friendship";
   exp: number;
 };
 
@@ -23,9 +24,14 @@ function sign(value: string) {
   return createHmac("sha256", SECRET).update(value).digest("base64url");
 }
 
-export function createSessionToken(email: string, ttlSeconds: number = DEFAULT_TTL_SECONDS) {
+export function createSessionToken(
+  email: string,
+  mode: "romance" | "friendship" = "romance",
+  ttlSeconds: number = DEFAULT_TTL_SECONDS
+) {
   const payload: SessionPayload = {
     email: email.trim().toLowerCase(),
+    mode,
     exp: Math.floor(Date.now() / 1000) + ttlSeconds,
   };
 
@@ -50,13 +56,17 @@ export function verifySessionToken(token: string): SessionPayload | null {
   if (!timingSafeEqual(sigBuffer, expectedBuffer)) return null;
 
   try {
-    const payload = JSON.parse(decodeBase64Url(payloadEncoded)) as SessionPayload;
+    const payload = JSON.parse(decodeBase64Url(payloadEncoded)) as Partial<SessionPayload>;
     if (!payload?.email || !payload?.exp) return null;
 
     const now = Math.floor(Date.now() / 1000);
     if (now >= payload.exp) return null;
 
-    return payload;
+    return {
+      email: payload.email,
+      mode: payload.mode === "friendship" ? "friendship" : "romance",
+      exp: payload.exp,
+    };
   } catch {
     return null;
   }
