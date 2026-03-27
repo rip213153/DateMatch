@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { MatchItem } from "@/components/match/types";
 import type { MatchSchedulePhase } from "@/lib/match-schedule";
 
-type MatchAvailability = {
+export type MatchAvailability = {
   matchAt: number | null;
   releaseAt: number | null;
   displayEndAt: number | null;
@@ -37,7 +37,7 @@ const EMPTY_AVAILABILITY: MatchAvailability = {
 };
 
 export function useMatchData(
-  currentUser: { id: number } | null,
+  currentUserId: number | null,
   isAuthenticated: boolean,
   mode: "romance" | "friendship" = "romance"
 ): UseMatchDataResult {
@@ -46,14 +46,14 @@ export function useMatchData(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchMatches = async () => {
-    if (!currentUser) return;
+  const fetchMatches = useCallback(async () => {
+    if (!currentUserId) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/find-matches?userId=${currentUser.id}&mode=${mode}`, {
+      const res = await fetch(`/api/find-matches?userId=${currentUserId}&mode=${mode}`, {
         cache: "no-store",
       });
       const data = await res.json();
@@ -87,13 +87,13 @@ export function useMatchData(
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUserId, mode]);
 
   useEffect(() => {
-    if (isAuthenticated && currentUser) {
+    if (isAuthenticated && currentUserId) {
       void fetchMatches();
     }
-  }, [currentUser, isAuthenticated, mode]);
+  }, [currentUserId, fetchMatches, isAuthenticated]);
 
   return {
     matches,

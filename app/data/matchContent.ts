@@ -5,6 +5,7 @@ export type MatchContentContext = {
   sameUniversity: boolean;
   ageDiff: number;
   sharedInterests: string[];
+  sharedPreferenceTags: string[];
   personalityScore: number;
   interestsScore: number;
   backgroundScore: number;

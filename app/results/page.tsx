@@ -2,17 +2,10 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Download, Heart, RefreshCcw, Sparkles, Star, Users } from "lucide-react";
-import {
-  PolarAngleAxis,
-  PolarGrid,
-  PolarRadiusAxis,
-  Radar,
-  RadarChart,
-  ResponsiveContainer,
-} from "recharts";
 import { Button } from "@/components/ui/button";
 import { BackButton } from "@/components/ui/back-button";
 import type { QuizMode } from "@/app/data/types";
@@ -28,6 +21,18 @@ import {
   type TitleDescriptionEntry,
   type TraitMetaItem,
 } from "@/app/data/resultsContent";
+
+const TraitRadarChart = dynamic(
+  () => import("@/components/results/trait-radar-chart").then((mod) => mod.TraitRadarChart),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center rounded-[1.5rem] bg-white/60">
+        <div className="h-44 w-44 animate-pulse rounded-full border border-pink-100 bg-gradient-to-br from-pink-50 to-purple-50" />
+      </div>
+    ),
+  }
+);
 
 function clampTrait(value: unknown): number {
   const num = Number(value);
@@ -87,7 +92,6 @@ function BackgroundEffects() {
     </div>
   );
 }
-
 function getTopAndBottomTraits(profile: Record<string, number>, meta: TraitMetaItem[]) {
   const sorted = [...meta].sort((a, b) => (profile[b.key] ?? 0) - (profile[a.key] ?? 0));
   return {
@@ -116,7 +120,12 @@ function buildHighlights(profile: Record<string, number>, meta: TraitMetaItem[])
   const strengths = top.map((item) => {
     const score = profile[item.key] ?? 5;
     const level = getTraitLevel(score);
-    return `${item.label}：${item.summaries[level]}`;
+    return {
+      key: item.key,
+      label: item.label,
+      summary: item.summaries[level],
+      detail: item.details[level],
+    };
   });
 
   const growthAreas = bottom.map((item) => {
@@ -133,7 +142,6 @@ function ResultsContent() {
   const searchParams = useSearchParams();
   const [downloading, setDownloading] = useState(false);
   const [activeTraitKey, setActiveTraitKey] = useState<string | null>(null);
-  const [chartReady, setChartReady] = useState(false);
 
   const mode = detectQuizMode(searchParams.get("mode"));
   const modeConfig = RESULTS_MODE_CONFIG[mode];
@@ -170,12 +178,10 @@ function ResultsContent() {
   const { strengths, growthAreas } = buildHighlights(profile, traitMeta);
 
   useEffect(() => {
-    const rafId = window.requestAnimationFrame(() => {
-      setChartReady(true);
-    });
-
-    return () => window.cancelAnimationFrame(rafId);
-  }, []);
+    router.prefetch("/");
+    router.prefetch(`/quiz?mode=${mode}`);
+    router.prefetch(modeConfig.primaryActionHref);
+  }, [mode, modeConfig.primaryActionHref, router]);
 
   const downloadResultCard = async () => {
     if (downloading) return;
@@ -258,20 +264,7 @@ function ResultsContent() {
             {modeConfig.titlePrefix}
           </h2>
           <div className="h-[350px] w-full">
-            {chartReady ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <RadarChart data={chartData}>
-                  <PolarGrid stroke="#fbcfe8" />
-                  <PolarAngleAxis dataKey="trait" tick={{ fill: "#4b5563", fontSize: 13 }} />
-                  <PolarRadiusAxis domain={[0, 10]} tick={false} axisLine={false} />
-                  <Radar dataKey="value" stroke="#ec4899" fill="#ec4899" fillOpacity={0.4} />
-                </RadarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex h-full items-center justify-center rounded-[1.5rem] bg-white/60">
-                <div className="h-44 w-44 animate-pulse rounded-full border border-pink-100 bg-gradient-to-br from-pink-50 to-purple-50" />
-              </div>
-            )}
+            <TraitRadarChart data={chartData} />
           </div>
 
           <div className="mt-8 flex items-center justify-between gap-3">
@@ -334,9 +327,14 @@ function ResultsContent() {
               <Star className="mr-1 h-4 w-4" />
               {RESULTS_TEXT.strengths}
             </h3>
-            <ul className="space-y-2 text-sm text-gray-700">
+            <ul className="space-y-3 text-sm text-gray-700">
               {strengths.map((item, index) => (
-                <li key={index}>• {item}</li>
+                <li key={item.key ?? index} className="rounded-2xl bg-green-50/60 px-4 py-3">
+                  <div className="font-semibold text-gray-900">
+                    {item.label}：{item.summary}
+                  </div>
+                  <p className="mt-1 leading-6 text-gray-600">{item.detail}</p>
+                </li>
               ))}
             </ul>
           </motion.div>
@@ -351,9 +349,9 @@ function ResultsContent() {
               <Sparkles className="mr-1 h-4 w-4" />
               {RESULTS_TEXT.growth}
             </h3>
-            <ul className="space-y-2 text-sm text-gray-700">
+            <ul className="list-disc space-y-2 pl-5 text-sm text-gray-700">
               {growthAreas.map((item, index) => (
-                <li key={index}>• {item}</li>
+                <li key={index}>{item}</li>
               ))}
             </ul>
           </motion.div>
@@ -372,17 +370,17 @@ function ResultsContent() {
           <div className="grid gap-6 md:grid-cols-2">
             <div>
               <h4 className="mb-2 font-bold text-green-600">{modeConfig.bestMatchTitle}</h4>
-              <ul className="space-y-2 text-sm text-gray-700">
+              <ul className="list-disc space-y-2 pl-5 text-sm text-gray-700">
                 {modeConfig.bestMatches.map((item, index) => (
-                  <li key={index}>• {item}</li>
+                  <li key={index}>{item}</li>
                 ))}
               </ul>
             </div>
             <div>
               <h4 className="mb-2 font-bold text-rose-600">{modeConfig.challengeTitle}</h4>
-              <ul className="space-y-2 text-sm text-gray-700">
+              <ul className="list-disc space-y-2 pl-5 text-sm text-gray-700">
                 {modeConfig.challengingMatches.map((item, index) => (
-                  <li key={index}>• {item}</li>
+                  <li key={index}>{item}</li>
                 ))}
               </ul>
             </div>

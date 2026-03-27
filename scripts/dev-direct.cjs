@@ -1,17 +1,32 @@
-﻿process.env.NODE_ENV = process.env.NODE_ENV || "development";
+process.env.NODE_ENV = process.env.NODE_ENV || "development";
 
-const { startServer } = require("next/dist/server/lib/start-server");
+const { spawn } = require("child_process");
 
-const port = Number(process.env.PORT || "3000");
-const hostname = process.env.HOSTNAME || "0.0.0.0";
+const pathValue = process.env.Path || process.env.PATH || "";
+delete process.env.Path;
+delete process.env.PATH;
+process.env.Path = pathValue;
 
-startServer({
-  dir: process.cwd(),
-  port,
-  hostname,
-  isDev: true,
-  allowRetry: true,
-}).catch((error) => {
+const nextBin = require.resolve("next/dist/bin/next");
+const port = String(process.env.PORT || "3000");
+
+const child = spawn(process.execPath, [nextBin, "dev", "-p", port], {
+  cwd: process.cwd(),
+  env: process.env,
+  stdio: "inherit",
+  windowsHide: false,
+});
+
+child.on("exit", (code, signal) => {
+  if (signal) {
+    process.kill(process.pid, signal);
+    return;
+  }
+
+  process.exit(code ?? 0);
+});
+
+child.on("error", (error) => {
   console.error("Failed to start direct dev server:", error);
   process.exit(1);
 });

@@ -39,8 +39,9 @@ export async function GET(request: Request) {
         created_at: user.created_at,
       })),
     });
-  } catch (error: any) {
-    console.error("API /api/users failed:", error.message);
-    return NextResponse.json({ error: "获取用户列表失败", details: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    console.error("API /api/users failed:", message);
+    return NextResponse.json({ error: "获取用户列表失败", details: message }, { status: 500 });
   }
 }

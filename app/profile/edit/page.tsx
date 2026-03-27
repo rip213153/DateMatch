@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Clock3, Save } from "lucide-react";
 import { INTEREST_TAG_LIBRARY } from "@/app/data/interestTagLibrary";
+import { getProfileChoiceOptionsWithLegacy, isProfileChoiceAllowed } from "@/app/data/profileChoiceOptions";
 import { IdealPreferenceEditor } from "@/components/profile/IdealPreferenceEditor";
 import { InterestTagEditor, mergeInterestInputs } from "@/components/profile/InterestTagEditor";
+import { ProfileChoiceGrid } from "@/components/profile/ProfileChoiceGrid";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,14 +33,6 @@ type SaveResult = {
   deferredToNextRound: boolean;
   effectiveAt: number | null;
 };
-
-const GENDER_OPTIONS = [
-  { value: "male", label: "男生" },
-  { value: "female", label: "女生" },
-  { value: "non-binary", label: "非二元" },
-  { value: "other", label: "其他" },
-  { value: "any", label: "都可以" },
-];
 
 const KNOWN_INTEREST_TAGS = new Set(INTEREST_TAG_LIBRARY.flatMap((group) => group.tags));
 
@@ -138,6 +132,16 @@ export default function EditProfilePage() {
     () => mergeInterestInputs(selectedInterests, interestsText),
     [interestsText, selectedInterests],
   );
+  const genderOptions = useMemo(
+    () => getProfileChoiceOptionsWithLegacy(mode, "gender", profile.gender),
+    [mode, profile.gender],
+  );
+  const seekingOptions = useMemo(
+    () => getProfileChoiceOptionsWithLegacy(mode, "seeking", profile.seeking),
+    [mode, profile.seeking],
+  );
+  const hasLegacyGender = Boolean(profile.gender) && !isProfileChoiceAllowed(mode, "gender", profile.gender);
+  const hasLegacySeeking = Boolean(profile.seeking) && !isProfileChoiceAllowed(mode, "seeking", profile.seeking);
 
   useEffect(() => {
     if (!userId) {
@@ -329,35 +333,33 @@ export default function EditProfilePage() {
               </section>
 
               <section className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-700">性别</label>
-                  <select
+                <div className="space-y-3">
+                  <label className="text-sm font-semibold text-gray-700">{"\u4f60\u7684\u6027\u522b"}</label>
+                  <ProfileChoiceGrid
+                    mode={mode}
+                    options={genderOptions}
                     value={profile.gender}
-                    onChange={(event) => handleFieldChange("gender", event.target.value)}
-                    className="h-12 w-full rounded-2xl border border-gray-200 px-4 text-sm outline-none focus:border-pink-300 focus:ring-2 focus:ring-pink-500/10"
-                  >
-                    <option value="">请选择</option>
-                    {GENDER_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(gender) => handleFieldChange("gender", gender)}
+                  />
+                  {hasLegacyGender ? (
+                    <p className="text-xs leading-relaxed text-amber-600">
+                      {"\u5f53\u524d\u8d44\u6599\u91cc\u4fdd\u7559\u4e86\u65e7\u7248\u6027\u522b\u9009\u9879\uff0c\u91cd\u65b0\u9009\u62e9\u540e\u4f1a\u6309\u73b0\u5728\u8fd9\u5957\u89c4\u5219\u4fdd\u5b58\u3002"}
+                    </p>
+                  ) : null}
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-gray-700">{mode === "friendship" ? "想认识的搭子" : "想认识的对象"}</label>
-                  <select
+                <div className="space-y-3">
+                  <label className="text-sm font-semibold text-gray-700">{mode === "friendship" ? "\u60f3\u8ba4\u8bc6\u7684\u642d\u5b50" : "\u60f3\u8ba4\u8bc6\u7684\u5bf9\u8c61"}</label>
+                  <ProfileChoiceGrid
+                    mode={mode}
+                    options={seekingOptions}
                     value={profile.seeking}
-                    onChange={(event) => handleFieldChange("seeking", event.target.value)}
-                    className="h-12 w-full rounded-2xl border border-gray-200 px-4 text-sm outline-none focus:border-pink-300 focus:ring-2 focus:ring-pink-500/10"
-                  >
-                    <option value="">请选择</option>
-                    {GENDER_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(seeking) => handleFieldChange("seeking", seeking)}
+                  />
+                  {hasLegacySeeking ? (
+                    <p className="text-xs leading-relaxed text-amber-600">
+                      {"\u5f53\u524d\u8d44\u6599\u91cc\u4fdd\u7559\u4e86\u65e7\u7248\u76ee\u6807\u9009\u9879\uff0c\u82e5\u91cd\u65b0\u9009\u62e9\uff0c\u4f1a\u6309\u73b0\u5728\u5bf9\u5e94\u6a21\u5f0f\u7684\u89c4\u5219\u4fdd\u5b58\u3002"}
+                    </p>
+                  ) : null}
                 </div>
               </section>
 
@@ -416,4 +418,3 @@ export default function EditProfilePage() {
     </div>
   );
 }
-

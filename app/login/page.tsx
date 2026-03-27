@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Heart, MailCheck, Rocket } from "lucide-react";
+import { Heart, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AuthService } from "@/lib/auth";
@@ -40,6 +40,13 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    const targets = new Set<string>(["/", redirectTo, applyModeToRedirect(redirectTo, loginMode)]);
+    targets.forEach((target) => {
+      router.prefetch(target);
+    });
+  }, [loginMode, redirectTo, router]);
+
   const handleLogin = async () => {
     if (submitting) return;
 
@@ -63,20 +70,22 @@ export default function LoginPage() {
       }
 
       const resolvedMode = String(data?.mode || loginMode) === "friendship" ? "friendship" : "romance";
-      await AuthService.loginWithEmail(String(data?.email || email), resolvedMode);
-      router.replace(applyModeToRedirect(redirectTo, resolvedMode));
+      const resolvedUserId = Number(data?.userId);
+      const nextRedirect = applyModeToRedirect(redirectTo, resolvedMode);
+
+      await AuthService.loginWithEmail(
+        String(data?.email || email),
+        resolvedMode,
+        Number.isInteger(resolvedUserId) && resolvedUserId > 0 ? resolvedUserId : undefined
+      );
+
+      router.prefetch(nextRedirect);
+      router.replace(nextRedirect);
     } catch (err) {
       console.error("Login error:", err);
       setError("网络错误，请重试");
+      setSubmitting(false);
     }
-  };
-
-  const handleDevLogin = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    setError("");
-    await AuthService.devLogin();
-    router.replace(applyModeToRedirect(redirectTo, loginMode));
   };
 
   return (
@@ -89,7 +98,9 @@ export default function LoginPage() {
           <span className="text-xl font-bold text-gray-900">邮箱登录</span>
         </div>
 
-        <p className="mb-4 text-sm text-gray-600">输入你测试时填写的邮箱，系统将自动比对并直接登录。</p>
+        <p className="mb-4 text-sm text-gray-600">
+          输入你提交资料时填写的邮箱，系统会自动匹配对应档案并直接登录。
+        </p>
 
         <label className="mb-2 block text-sm font-medium text-gray-700">邮箱</label>
         <Input
@@ -98,7 +109,7 @@ export default function LoginPage() {
             setEmail(e.target.value);
             if (error) setError("");
           }}
-          placeholder="例如：name@example.com"
+          placeholder="name@example.com"
           className="h-11"
           onKeyDown={(e) => {
             if (e.key === "Enter") {

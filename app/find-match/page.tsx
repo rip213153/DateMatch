@@ -3,59 +3,17 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Heart, Sparkles } from "lucide-react";
+import { Heart, Sparkles } from "lucide-react";
+import { getProfileChoiceOptions } from "@/app/data/profileChoiceOptions";
 import { IdealPreferenceEditor } from "@/components/profile/IdealPreferenceEditor";
 import { InterestTagEditor, mergeInterestInputs } from "@/components/profile/InterestTagEditor";
+import { ProfileChoiceGrid } from "@/components/profile/ProfileChoiceGrid";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
-const GENDER_OPTIONS = [
-  { value: "male", label: "男" },
-  { value: "female", label: "女" },
-  { value: "non-binary", label: "非二元" },
-  { value: "other", label: "其他" },
-];
-
-const SEEKING_OPTIONS = [
-  { value: "male", label: "男" },
-  { value: "female", label: "女" },
-  { value: "non-binary", label: "非二元" },
-  { value: "any", label: "都可以" },
-];
-
-function ChoiceGrid({
-  options,
-  value,
-  onChange,
-}: {
-  options: Array<{ value: string; label: string }>;
-  value: string;
-  onChange: (nextValue: string) => void;
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      {options.map((option) => {
-        const isActive = value === option.value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => onChange(option.value)}
-            className={`relative flex items-center justify-center rounded-2xl border-2 px-4 py-4 text-sm font-semibold transition-all duration-300 active:scale-[0.97] ${
-              isActive
-                ? "border-purple-300 bg-purple-50 text-purple-700 shadow-[0_0_15px_rgba(168,85,247,0.12)]"
-                : "border-transparent bg-[#f8f9fa] text-gray-500 hover:bg-purple-50/50 hover:text-purple-600"
-            }`}
-          >
-            {isActive ? <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-purple-400 opacity-50" /> : null}
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+const GENDER_OPTIONS = getProfileChoiceOptions("romance", "gender");
+const SEEKING_OPTIONS = getProfileChoiceOptions("romance", "seeking");
 
 export default function FindMatchPage() {
   const router = useRouter();
@@ -187,11 +145,11 @@ export default function FindMatchPage() {
             <section className="grid gap-6 sm:grid-cols-2">
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-gray-700">你的性别</label>
-                <ChoiceGrid options={GENDER_OPTIONS} value={formData.gender} onChange={(gender) => setFormData((prev) => ({ ...prev, gender }))} />
+                <ProfileChoiceGrid mode="romance" options={GENDER_OPTIONS} value={formData.gender} onChange={(gender) => setFormData((prev) => ({ ...prev, gender }))} />
               </div>
               <div className="space-y-3">
                 <label className="text-sm font-semibold text-gray-700">想认识的对象</label>
-                <ChoiceGrid options={SEEKING_OPTIONS} value={formData.seeking} onChange={(seeking) => setFormData((prev) => ({ ...prev, seeking }))} />
+                <ProfileChoiceGrid mode="romance" options={SEEKING_OPTIONS} value={formData.seeking} onChange={(seeking) => setFormData((prev) => ({ ...prev, seeking }))} />
               </div>
             </section>
 
@@ -266,4 +224,3 @@ export default function FindMatchPage() {
     </div>
   );
 }
-

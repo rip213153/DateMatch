@@ -1,23 +1,19 @@
-import { and, asc, eq, or } from "drizzle-orm";
-import { NextResponse } from "next/server";
-import type { QuizMode } from "@/app/data/types";
+import { asc } from "drizzle-orm";
+import {
+  apiSuccess,
+  assertApi,
+  handleApiRouteError,
+  readJsonBody,
+  readPositiveInt,
+  readTrimmedString,
+} from "@/lib/api-route";
+import { buildChatConversationCondition, resolveChatConversationScope } from "@/lib/chat-conversations";
 import { createChatNotificationEvent } from "@/lib/chat-notification-events";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
-import { getMatchSchedule } from "@/lib/match-schedule";
-import { hasMutualPairForUsers } from "@/lib/mutual-matching";
 import { getProfileRowsForMode } from "@/lib/profile-updates";
 import { chatMessages } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
-
-function toPositiveInt(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isInteger(parsed) && parsed > 0) return parsed;
-  }
-  return null;
-}
 
 function toIsoString(value: unknown): string | null {
   if (!value) return null;
@@ -41,31 +37,27 @@ function toIsoString(value: unknown): string | null {
   return null;
 }
 
-async function getPairRows(mode: QuizMode, userId: number, targetUserId: number) {
+async function getPairRows(mode: "romance" | "friendship", userId: number, targetUserId: number, roundKey: string | null) {
   const db = getDbForMode(mode);
 
   return db
     .select({
       id: chatMessages.id,
+      round_key: chatMessages.round_key,
       sender_id: chatMessages.sender_id,
       receiver_id: chatMessages.receiver_id,
       content: chatMessages.content,
       created_at: chatMessages.created_at,
     })
     .from(chatMessages)
-    .where(
-      or(
-        and(eq(chatMessages.sender_id, userId), eq(chatMessages.receiver_id, targetUserId)),
-        and(eq(chatMessages.sender_id, targetUserId), eq(chatMessages.receiver_id, userId))
-      )
-    )
+    .where(buildChatConversationCondition(userId, targetUserId, roundKey))
     .orderBy(asc(chatMessages.created_at), asc(chatMessages.id));
 }
 
 function countSenderMessagesSinceLastReply(
   pairRows: Array<{ sender_id: number; receiver_id: number }>,
   senderId: number,
-  receiverId: number
+  receiverId: number,
 ) {
   let count = 0;
 
@@ -86,43 +78,40 @@ function countSenderMessagesSinceLastReply(
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = toPositiveInt(searchParams.get("userId"));
-    const targetUserId = toPositiveInt(searchParams.get("targetUserId"));
+    const userId = readPositiveInt(searchParams.get("userId"));
+    const targetUserId = readPositiveInt(searchParams.get("targetUserId"));
     const mode = resolveQuizMode(searchParams.get("mode"));
 
-    if (!userId || !targetUserId) {
-      return NextResponse.json({ error: "Missing valid userId or targetUserId" }, { status: 400 });
-    }
+    assertApi(userId && targetUserId, "Missing valid userId or targetUserId", {
+      status: 400,
+      code: "INVALID_CHAT_USER_IDS",
+    });
 
     const now = new Date();
-    const db = getDbForMode(mode);
-    const [profileRows, rows] = await Promise.all([
-      getProfileRowsForMode(mode, now),
-      getPairRows(mode, userId, targetUserId),
-    ]);
+    const profileRows = await getProfileRowsForMode(mode, now);
 
     const senderExists = profileRows.some((row) => Number(row.id) === userId);
     const receiverExists = profileRows.some((row) => Number(row.id) === targetUserId);
 
-    if (!senderExists || !receiverExists) {
-      return NextResponse.json({ error: "Chat user not found" }, { status: 404 });
-    }
+    assertApi(senderExists && receiverExists, "Chat user not found", {
+      status: 404,
+      code: "CHAT_USER_NOT_FOUND",
+    });
 
-    const hasConversation = rows.length > 0;
-    const schedule = getMatchSchedule(now);
-    const canUseMutualPair =
-      schedule.isInDisplayWindow &&
-      (await hasMutualPairForUsers(userId, targetUserId, mode, profileRows, schedule.releaseAt, now));
+    const conversation = await resolveChatConversationScope(mode, userId, targetUserId, profileRows, now);
 
-    if (!hasConversation && !canUseMutualPair) {
-      return NextResponse.json(
-        { error: "You can only access chats from your current mutual recommendations." },
-        { status: 403 }
-      );
-    }
+    assertApi(
+      Boolean(conversation.source),
+      "You can only access chats from your current mutual recommendations.",
+      {
+        status: 403,
+        code: "CHAT_ACCESS_DENIED",
+      }
+    );
 
-    return NextResponse.json({
-      success: true,
+    const rows = await getPairRows(mode, userId, targetUserId, conversation.roundKey);
+
+    return apiSuccess({
       mode,
       messages: rows.map((row) => ({
         id: row.id,
@@ -133,72 +122,69 @@ export async function GET(request: Request) {
       })),
     });
   } catch (error) {
-    console.error("Error fetching chat messages:", error);
-    return NextResponse.json({ error: "Failed to fetch chat messages" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "Failed to fetch chat messages",
+      code: "FETCH_CHAT_MESSAGES_FAILED",
+      logMessage: "Error fetching chat messages:",
+    });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const payload = await request.json();
-    const senderId = toPositiveInt(payload?.senderId);
-    const receiverId = toPositiveInt(payload?.receiverId);
-    const content = typeof payload?.content === "string" ? payload.content.trim() : "";
-    const mode = resolveQuizMode(payload?.mode);
+    const body = await readJsonBody(request);
+    const senderId = readPositiveInt(body.senderId);
+    const receiverId = readPositiveInt(body.receiverId);
+    const content = readTrimmedString(body.content);
+    const mode = resolveQuizMode(body.mode);
 
-    if (!senderId || !receiverId) {
-      return NextResponse.json({ error: "Missing valid senderId or receiverId" }, { status: 400 });
-    }
-
-    if (senderId === receiverId) {
-      return NextResponse.json({ error: "Cannot send messages to yourself" }, { status: 400 });
-    }
-
-    if (!content) {
-      return NextResponse.json({ error: "Message content cannot be empty" }, { status: 400 });
-    }
-
-    if (content.length > 1000) {
-      return NextResponse.json({ error: "Message content must be 1000 characters or fewer" }, { status: 400 });
-    }
+    assertApi(senderId && receiverId, "Missing valid senderId or receiverId", {
+      status: 400,
+      code: "INVALID_CHAT_USER_IDS",
+    });
+    assertApi(senderId !== receiverId, "Cannot send messages to yourself", {
+      status: 400,
+      code: "SELF_CHAT_NOT_ALLOWED",
+    });
+    assertApi(content, "Message content cannot be empty", {
+      status: 400,
+      code: "EMPTY_MESSAGE_CONTENT",
+    });
+    assertApi(content.length <= 1000, "Message content must be 1000 characters or fewer", {
+      status: 400,
+      code: "MESSAGE_CONTENT_TOO_LONG",
+    });
 
     const now = new Date();
     const db = getDbForMode(mode);
-    const [profileRows, pairRows] = await Promise.all([
-      getProfileRowsForMode(mode, now),
-      getPairRows(mode, senderId, receiverId),
-    ]);
+    const profileRows = await getProfileRowsForMode(mode, now);
 
     const senderExists = profileRows.some((row) => Number(row.id) === senderId);
     const receiverExists = profileRows.some((row) => Number(row.id) === receiverId);
 
-    if (!senderExists || !receiverExists) {
-      return NextResponse.json({ error: "Chat user not found" }, { status: 404 });
-    }
+    assertApi(senderExists && receiverExists, "Chat user not found", {
+      status: 404,
+      code: "CHAT_USER_NOT_FOUND",
+    });
 
-    const hasConversation = pairRows.length > 0;
+    const conversation = await resolveChatConversationScope(mode, senderId, receiverId, profileRows, now);
+
+    assertApi(Boolean(conversation.source), "The other user is not currently in your mutual recommendations.", {
+      status: 403,
+      code: "CHAT_TARGET_NOT_AVAILABLE",
+    });
+
+    const pairRows = await getPairRows(mode, senderId, receiverId, conversation.roundKey);
     const senderMessagesSinceLastReply = countSenderMessagesSinceLastReply(pairRows, senderId, receiverId);
-    const schedule = getMatchSchedule(now);
-    const canUseMutualPair =
-      schedule.isInDisplayWindow &&
-      (await hasMutualPairForUsers(senderId, receiverId, mode, profileRows, schedule.releaseAt, now));
+    assertApi(senderMessagesSinceLastReply < 1, "You can only send one opening message until the other user replies.", {
+      status: 403,
+      code: "CHAT_OPENING_MESSAGE_LIMIT",
+    });
 
-    if (!canUseMutualPair && !hasConversation) {
-      return NextResponse.json(
-        { error: "The other user is not currently in your mutual recommendations." },
-        { status: 403 }
-      );
-    }
-
-    if (senderMessagesSinceLastReply >= 1) {
-      return NextResponse.json(
-        { error: "You can only send one opening message until the other user replies." },
-        { status: 403 }
-      );
-    }
     const [inserted] = await db
       .insert(chatMessages)
       .values({
+        round_key: conversation.roundKey,
         sender_id: senderId,
         receiver_id: receiverId,
         content,
@@ -206,6 +192,7 @@ export async function POST(request: Request) {
       })
       .returning({
         id: chatMessages.id,
+        round_key: chatMessages.round_key,
         sender_id: chatMessages.sender_id,
         receiver_id: chatMessages.receiver_id,
         content: chatMessages.content,
@@ -223,8 +210,7 @@ export async function POST(request: Request) {
       console.error("Error creating chat notification event:", notificationError);
     }
 
-    return NextResponse.json({
-      success: true,
+    return apiSuccess({
       mode,
       message: {
         id: inserted.id,
@@ -236,7 +222,10 @@ export async function POST(request: Request) {
       notificationEvent,
     });
   } catch (error) {
-    console.error("Error sending chat message:", error);
-    return NextResponse.json({ error: "Failed to send chat message" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "Failed to send chat message",
+      code: "SEND_CHAT_MESSAGE_FAILED",
+      logMessage: "Error sending chat message:",
+    });
   }
 }

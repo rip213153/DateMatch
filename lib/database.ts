@@ -212,6 +212,7 @@ function ensureDatabase(sqlite: InstanceType<typeof BetterSqlite3>, label: strin
     sqlite.exec(`
       CREATE TABLE IF NOT EXISTS chat_messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        round_key TEXT,
         sender_id INTEGER NOT NULL,
         receiver_id INTEGER NOT NULL,
         content TEXT NOT NULL,
@@ -230,6 +231,29 @@ function ensureDatabase(sqlite: InstanceType<typeof BetterSqlite3>, label: strin
     console.log(`Ensured chat_messages table exists (${label})`);
   } catch (error) {
     console.error(`Failed to ensure chat_messages table (${label}):`, error);
+  }
+
+  try {
+    sqlite.exec("ALTER TABLE chat_messages ADD COLUMN round_key TEXT");
+    console.log(`Added chat_messages.round_key column (${label})`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("duplicate column name")) {
+      console.error(`Failed to ensure chat_messages.round_key column (${label}):`, error);
+    }
+  }
+
+  try {
+    sqlite.exec(`
+      CREATE INDEX IF NOT EXISTS chat_messages_round_idx
+        ON chat_messages(round_key);
+
+      CREATE INDEX IF NOT EXISTS chat_messages_round_pair_created_idx
+        ON chat_messages(round_key, sender_id, receiver_id, created_at);
+    `);
+    console.log(`Ensured chat_messages round indexes exist (${label})`);
+  } catch (error) {
+    console.error(`Failed to ensure chat_messages round indexes (${label}):`, error);
   }
 
   try {

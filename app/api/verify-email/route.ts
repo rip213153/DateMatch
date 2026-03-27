@@ -1,9 +1,11 @@
-﻿import { createHash } from "crypto";
+import { createHash } from "crypto";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/lib/database";
 import { emailLoginTokens } from "@/lib/schema";
 import { createSessionToken } from "@/lib/session";
+
+export const dynamic = "force-dynamic";
 
 function normalizeRedirect(value: string) {
   return value.startsWith("/") ? value : "/results";
@@ -48,8 +50,8 @@ export async function GET(request: Request) {
         and(
           eq(emailLoginTokens.token_hash, tokenHash),
           isNull(emailLoginTokens.used_at),
-          gt(emailLoginTokens.expires_at, now)
-        )
+          gt(emailLoginTokens.expires_at, now),
+        ),
       )
       .orderBy(desc(emailLoginTokens.id))
       .limit(1);

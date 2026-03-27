@@ -23,6 +23,7 @@ export function generateIceBreakers(currentUser: UserSummary, match: MatchItem):
   const context = buildMatchContentContext(currentUser, match);
   const results = [
     ...getInterestTopicOpeners(context, currentUser, match),
+    ...getPreferenceTagOpeners(context),
     ...pickTemplateTexts(MATCH_ICEBREAKER_TEMPLATES, context, currentUser, match, 5),
   ];
 
@@ -63,6 +64,8 @@ function buildMatchContentContext(currentUser: UserSummary, match: MatchItem): M
 
   const currentUserInterests = normalizeInterestsToArray(currentUser.interests);
   const matchUserInterests = normalizeInterestsToArray(match.user.interests);
+  const currentUserPreferenceTags = normalizeStringArray(currentUser.ideal_date_tags);
+  const matchUserPreferenceTags = normalizeStringArray(match.user.ideal_date_tags);
 
   const sameUniversity = Boolean(
     currentUser.university &&
@@ -96,6 +99,7 @@ function buildMatchContentContext(currentUser: UserSummary, match: MatchItem): M
     sameUniversity,
     ageDiff,
     sharedInterests: getSharedInterests(currentUserInterests, matchUserInterests),
+    sharedPreferenceTags: getSharedInterests(currentUserPreferenceTags, matchUserPreferenceTags),
     personalityScore: normalizeScore(match.match.breakdown.personality),
     interestsScore: normalizeScore(match.match.breakdown.interests),
     backgroundScore: normalizeScore(match.match.breakdown.background),
@@ -196,6 +200,18 @@ function normalizeInterestsToArray(interests: unknown): string[] {
   }
 
   return [];
+}
+
+function normalizeStringArray(values: unknown): string[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return dedupeTexts(
+    values
+      .map((item) => String(item).trim())
+      .filter(Boolean),
+  );
 }
 
 function getSharedInterests(left: string[], right: string[]): string[] {
@@ -390,6 +406,12 @@ function getInterestTopicOpeners(
   }).filter(Boolean);
 }
 
+function getPreferenceTagOpeners(context: MatchContentContext): string[] {
+  return context.sharedPreferenceTags
+    .slice(0, 2)
+    .map((tag) => `发现你们都在意“${tag}”，可以先聊聊这点为什么会吸引你。`);
+}
+
 function buildDerivedHighlights(context: MatchContentContext): string[] {
   const results: string[] = [];
 
@@ -411,6 +433,10 @@ function buildDerivedHighlights(context: MatchContentContext): string[] {
         .slice(0, 3)
         .join("、")}`,
     );
+  }
+
+  if (context.sharedPreferenceTags.length > 0) {
+    results.push(`共同偏好：${context.sharedPreferenceTags.slice(0, 3).join("、")}`);
   }
 
   if (context.complementaryScore >= 0.66) {

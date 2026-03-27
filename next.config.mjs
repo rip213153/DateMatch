@@ -3,7 +3,7 @@ const nextConfig = {
   experimental: {
     cpus: 1,
     webpackBuildWorker: false,
-    workerThreads: true,
+    workerThreads: false,
   },
 };
 

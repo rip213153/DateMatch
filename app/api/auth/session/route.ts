@@ -1,15 +1,22 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { apiSuccess } from "@/lib/api-route";
 import { verifySessionToken } from "@/lib/session";
 
-export async function GET(request: NextRequest) {
-  const raw = request.cookies.get("datematch_session")?.value || "";
-  const payload = raw ? verifySessionToken(raw) : null;
+export const dynamic = "force-dynamic";
+
+export async function GET(request: Request) {
+  const raw = request.headers.get("cookie") ?? "";
+  const sessionCookie = raw
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("datematch_session="));
+  const token = sessionCookie ? decodeURIComponent(sessionCookie.slice("datematch_session=".length)) : "";
+  const payload = token ? verifySessionToken(token) : null;
 
   if (!payload) {
-    return NextResponse.json({ isAuthenticated: false });
+    return apiSuccess({ isAuthenticated: false });
   }
 
-  return NextResponse.json({
+  return apiSuccess({
     isAuthenticated: true,
     email: payload.email,
     expiresAt: payload.exp,

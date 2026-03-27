@@ -1,3 +1,3 @@
 @echo off
-cd /d C:\Users\rip\Downloads\datematch-main
+cd /d "%~dp0"
 npm run dev > datematch.dev.out.log 2> datematch.dev.err.log

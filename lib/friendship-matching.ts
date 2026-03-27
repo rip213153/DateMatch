@@ -55,15 +55,15 @@ const DEFAULT_TRAITS: FriendshipTraits = {
 }
 function normalizeGender(value: unknown): "M" | "F" | "ANY" {
   const text = String(value ?? "").trim().toLowerCase();
-  if (["m", "male", "man", "boy", "?"].includes(text)) return "M";
-  if (["f", "female", "woman", "girl", "?"].includes(text)) return "F";
+  if (["m", "male", "man", "boy", "\u7537"].includes(text)) return "M";
+  if (["f", "female", "woman", "girl", "\u5973"].includes(text)) return "F";
   return "ANY";
 }
 
 function normalizeLookingFor(value: unknown): "M" | "F" | "ANY" {
   const text = String(value ?? "").trim().toLowerCase();
-  if (["m", "male", "man", "boy", "?"].includes(text)) return "M";
-  if (["f", "female", "woman", "girl", "?"].includes(text)) return "F";
+  if (["m", "male", "man", "boy", "\u7537"].includes(text)) return "M";
+  if (["f", "female", "woman", "girl", "\u5973"].includes(text)) return "F";
   return "ANY";
 }
 
@@ -248,27 +248,27 @@ function buildHighlights(details: MatchDetails) {
   const items: string[] = [];
 
   if (details.breakdown.personality >= 0.78) {
-    items.push("????????");
+    items.push("\u793e\u4ea4\u8282\u594f\u5f88\u5408\u62cd");
   }
 
   if (details.breakdown.complementary >= 0.62) {
-    items.push("???????");
+    items.push("\u76f8\u5904\u65b9\u5f0f\u6709\u4e92\u8865");
   }
 
   if (details.breakdown.interests >= 0.28 && details.sharedTags.length > 0) {
-    items.push(`????: ${details.sharedTags.slice(0, 3).join("?")}`);
+    items.push(`\u5171\u540c\u5174\u8da3: ${details.sharedTags.slice(0, 3).join("\u3001")}`);
   }
 
   if (details.sharedIdealTags.length > 0) {
-    items.push(`??????: ${details.sharedIdealTags.slice(0, 2).join("?")}`);
+    items.push(`\u76f8\u5904\u504f\u597d\u540c\u9891: ${details.sharedIdealTags.slice(0, 2).join("\u3001")}`);
   }
 
   if (details.breakdown.background >= 0.55) {
-    items.push("????????");
+    items.push("\u751f\u6d3b\u573a\u666f\u6bd4\u8f83\u63a5\u8fd1");
   }
 
   if (items.length === 0) {
-    items.push("??????????????");
+    items.push("\u76f8\u5904\u8282\u594f\u548c\u670b\u53cb\u8fb9\u754c\u6bd4\u8f83\u63a5\u8fd1");
   }
 
   return items.slice(0, 4);
@@ -278,23 +278,23 @@ function buildRecommendations(details: MatchDetails) {
   const items: string[] = [];
 
   if (details.breakdown.interests >= 0.28) {
-    items.push("????????????????????????");
+    items.push("\u53ef\u4ee5\u5148\u4ece\u5171\u540c\u5174\u8da3\u804a\u8d77\uff0c\u5f88\u5bb9\u6613\u81ea\u7136\u70ed\u8d77\u6765\u3002");
   }
 
   if (details.sharedIdealTags.length > 0) {
-    items.push("???????????????????????????????");
+    items.push("\u4f60\u4eec\u5bf9\u7406\u60f3\u76f8\u5904\u65b9\u5f0f\u6709\u91cd\u5408\uff0c\u53ef\u4ee5\u76f4\u63a5\u804a\u804a\u6700\u8212\u670d\u7684\u966a\u4f34\u8282\u594f\u3002");
   }
 
   if (details.breakdown.complementary >= 0.6) {
-    items.push("?????????????????????????");
+    items.push("\u4f60\u4eec\u5728\u8282\u594f\u4e0a\u6709\u4e92\u8865\uff0c\u4e00\u65b9\u53d1\u8d77\u4e00\u65b9\u63a5\u7403\uff0c\u76f8\u5904\u4f1a\u66f4\u8f7b\u677e\u3002");
   }
 
   if (details.breakdown.personality >= 0.75) {
-    items.push("?????????????????????????????");
+    items.push("\u793e\u4ea4\u4e60\u60ef\u6bd4\u8f83\u5408\u62cd\uff0c\u5148\u4ece\u6700\u8fd1\u7684\u5c0f\u65e5\u5e38\u6216\u60c5\u7eea\u72b6\u6001\u5f00\u59cb\u804a\u4f1a\u66f4\u81ea\u7136\u3002");
   }
 
   if (items.length === 0) {
-    items.push("??????????????????????????");
+    items.push("\u5148\u53d1\u4e00\u53e5\u8f7b\u677e\u95ee\u5019\uff0c\u4ece\u5b66\u6821\u3001\u5174\u8da3\u6216\u5468\u672b\u5b89\u6392\u5f00\u59cb\u7834\u51b0\u3002");
   }
 
   return items.slice(0, 4);

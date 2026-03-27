@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/database";
 import { chatMessages } from "@/lib/schema";
 
-export async function POST(request: Request) {
+export async function POST() {
   try {
     await db.delete(chatMessages).run();
 

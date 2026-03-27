@@ -1,13 +1,15 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, MessageCircle } from "lucide-react";
 import type { QuizMode } from "@/app/data/types";
+import { ProfileDialogActionsSection } from "@/components/match/ProfileDialogActionsSection";
+import { ProfileDialogConfirmationNotice } from "@/components/match/ProfileDialogConfirmationNotice";
+import { ProfileDialogDetailsSection } from "@/components/match/ProfileDialogDetailsSection";
+import { ProfileDialogEmailSection } from "@/components/match/ProfileDialogEmailSection";
+import { ProfileDialogHeaderSection } from "@/components/match/ProfileDialogHeaderSection";
 import type { MatchConfirmationStatus, UserSummary } from "@/components/match/types";
-import { IdealPreferenceDisplay } from "@/components/profile/IdealPreferenceDisplay";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 interface ProfileDialogProps {
   open: boolean;
@@ -135,98 +137,44 @@ export function ProfileDialog({
 
   if (!match) return null;
 
+  const formattedInterests = formatInterests(match.interests);
+  const handleStartChat = () => {
+    if (!currentUser) return;
+    router.push(`/chat?userId=${currentUser.id}&targetUserId=${match.id}&mode=${mode}`);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-white/70 bg-white/95 p-0 shadow-2xl sm:max-w-lg">
-        <DialogHeader className="border-b border-pink-100 bg-gradient-to-r from-pink-50 to-rose-50 px-6 py-5 text-left">
-          <DialogTitle className="text-2xl font-extrabold text-gray-900">{match.name} 的资料</DialogTitle>
-          <DialogDescription className="text-sm text-gray-500">
-            {mode === "friendship"
-              ? "看看对方的相处偏好，确认合适再继续聊天。"
-              : "看看对方的约会偏好，确认有感觉再继续了解。"}
-          </DialogDescription>
-        </DialogHeader>
+        <ProfileDialogHeaderSection name={match.name} mode={mode} />
 
         <div className="space-y-4 px-6 py-5 text-sm text-gray-700">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-gray-50 p-4">
-              <div className="text-gray-500">年龄</div>
-              <div className="font-semibold text-gray-900">{match.age} 岁</div>
-            </div>
-            <div className="rounded-2xl bg-gray-50 p-4">
-              <div className="text-gray-500">学校</div>
-              <div className="font-semibold text-gray-900">{match.university}</div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-gray-50 p-4">
-            <div className="mb-1 text-gray-500">兴趣爱好</div>
-            <div className="leading-relaxed text-gray-800">{formatInterests(match.interests)}</div>
-          </div>
-
-          <div className="rounded-2xl bg-gray-50 p-4">
-            <div className="mb-2 text-gray-500">{mode === "friendship" ? "理想相处方式" : "理想约会"}</div>
-            <IdealPreferenceDisplay mode={mode} tags={match.ideal_date_tags} description={match.ideal_date} />
-          </div>
-
-          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
-            <div className="text-sm font-semibold text-emerald-800">{confirmationCopy.title}</div>
-            <div className="mt-1 text-xs leading-relaxed text-emerald-700">{confirmationCopy.description}</div>
-          </div>
-
-          <div className="rounded-2xl bg-gray-50 p-4">
-            <div className="mb-1 text-gray-500">自我介绍</div>
-            <div className="leading-relaxed text-gray-800">{match.bio?.trim() || "暂未填写"}</div>
-          </div>
-
-          <div className="rounded-2xl bg-gray-50 p-4">
-            <div className="flex items-center gap-2 text-gray-700">
-              <Mail className="h-4 w-4 text-pink-500" />
-              <span className="font-medium">邮箱</span>
-            </div>
-            <div className="mt-2 break-all text-sm text-gray-600">
-              {checkingEmailAccess ? (
-                "正在检查是否满足展示条件..."
-              ) : emailUnlocked ? (
-                match.email || "暂未填写"
-              ) : (
-                <div className="space-y-1">
-                  <div>只有当双方都互相发过消息后，这里才会显示邮箱。</div>
-                  <div className="text-xs text-gray-400">邮箱仅用于登录验证，默认不会直接公开。</div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-3">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="h-11 rounded-xl">
-              关闭
-            </Button>
-            <Button
-              type="button"
-              variant={confirmationCopy.actionDisabled ? "outline" : "default"}
-              onClick={onToggleConfirm}
-              disabled={confirmationCopy.actionDisabled || confirmationUpdating}
-              className={
-                confirmationCopy.actionDisabled
-                  ? "h-11 rounded-xl border-emerald-200 bg-white text-emerald-600"
-                  : "h-11 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-              }
-            >
-              {confirmationUpdating ? "处理中..." : confirmationCopy.actionLabel}
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                if (!currentUser) return;
-                router.push(`/chat?userId=${currentUser.id}&targetUserId=${match.id}&mode=${mode}`);
-              }}
-              className="h-11 rounded-xl bg-gradient-to-r from-pink-500 to-purple-600 text-white hover:from-pink-600 hover:to-purple-700"
-            >
-              <MessageCircle className="mr-2 h-4 w-4" />
-              开始聊天
-            </Button>
-          </div>
+          <ProfileDialogDetailsSection
+            age={match.age}
+            university={match.university}
+            formattedInterests={formattedInterests}
+            mode={mode}
+            idealDateTags={match.ideal_date_tags}
+            idealDate={match.ideal_date}
+            bio={match.bio}
+          />
+          <ProfileDialogConfirmationNotice
+            title={confirmationCopy.title}
+            description={confirmationCopy.description}
+          />
+          <ProfileDialogEmailSection
+            checkingEmailAccess={checkingEmailAccess}
+            emailUnlocked={emailUnlocked}
+            email={match.email}
+          />
+          <ProfileDialogActionsSection
+            actionDisabled={confirmationCopy.actionDisabled}
+            actionLabel={confirmationCopy.actionLabel}
+            confirmationUpdating={confirmationUpdating}
+            onClose={() => onOpenChange(false)}
+            onToggleConfirm={onToggleConfirm}
+            onStartChat={handleStartChat}
+          />
         </div>
       </DialogContent>
     </Dialog>

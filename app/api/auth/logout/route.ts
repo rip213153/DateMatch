@@ -1,7 +1,9 @@
-﻿import { NextResponse } from "next/server";
+import { apiSuccess } from "@/lib/api-route";
+
+export const dynamic = "force-dynamic";
 
 export async function POST() {
-  const response = NextResponse.json({ success: true });
+  const response = apiSuccess();
   response.cookies.set({
     name: "datematch_session",
     value: "",

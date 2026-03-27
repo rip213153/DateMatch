@@ -250,6 +250,8 @@ export function getIceBreaker(
   tagsA: string[],
   tagsB: string[]
 ): string {
+  void tagsA;
+  void tagsB;
   // 1. 检测性格互补（社交风格差异大）
   if (Math.abs(pA.socialStyle - pB.socialStyle) > 3) {
     return ICE_BREAKERS.social_complementary[Math.floor(Math.random() * ICE_BREAKERS.social_complementary.length)];

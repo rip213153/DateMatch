@@ -1,8 +1,16 @@
 import { createHash } from "crypto";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
-import { NextResponse } from "next/server";
+import {
+  apiSuccess,
+  assertApi,
+  handleApiRouteError,
+  readJsonBody,
+  readTrimmedString,
+} from "@/lib/api-route";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { emailLoginTokens } from "@/lib/schema";
+
+export const dynamic = "force-dynamic";
 
 function hashValue(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -10,13 +18,14 @@ function hashValue(value: string) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const token = String(body?.token ?? "").trim();
-    const requestedMode = resolveQuizMode(body?.mode);
+    const body = await readJsonBody(request);
+    const token = readTrimmedString(body.token);
+    const requestedMode = resolveQuizMode(body.mode);
 
-    if (!token) {
-      return NextResponse.json({ success: false, error: "缺少 token" }, { status: 400 });
-    }
+    assertApi(token, "缺少 token", {
+      status: 400,
+      code: "MISSING_TOKEN",
+    });
 
     const now = Math.floor(Date.now() / 1000);
     const tokenHash = hashValue(token);
@@ -34,8 +43,8 @@ export async function POST(request: Request) {
           and(
             eq(emailLoginTokens.token_hash, tokenHash),
             isNull(emailLoginTokens.used_at),
-            gt(emailLoginTokens.expires_at, now)
-          )
+            gt(emailLoginTokens.expires_at, now),
+          ),
         )
         .orderBy(desc(emailLoginTokens.id))
         .limit(1);
@@ -51,15 +60,20 @@ export async function POST(request: Request) {
         .set({ used_at: now })
         .where(eq(emailLoginTokens.id, row.id));
 
-      return NextResponse.json({ success: true, email: row.email, mode });
+      return apiSuccess({ email: row.email, mode });
     }
 
-    return NextResponse.json(
-      { success: false, error: "验证链接无效或已过期" },
-      { status: 400 }
-    );
+    return handleApiRouteError(new Error("invalid token"), {
+      message: "验证链接无效或已过期",
+      status: 400,
+      code: "INVALID_OR_EXPIRED_TOKEN",
+      logMessage: "verify token invalid:",
+    });
   } catch (error) {
-    console.error("verify token failed:", error);
-    return NextResponse.json({ success: false, error: "验证失败，请稍后重试" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "验证失败，请稍后重试",
+      code: "VERIFY_EMAIL_TOKEN_FAILED",
+      logMessage: "verify token failed:",
+    });
   }
 }

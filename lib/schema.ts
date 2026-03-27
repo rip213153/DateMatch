@@ -106,15 +106,23 @@ export const chatMessages = sqliteTable(
   "chat_messages",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
+    round_key: text("round_key"),
     sender_id: integer("sender_id").notNull(),
     receiver_id: integer("receiver_id").notNull(),
     content: text("content").notNull(),
     created_at: integer("created_at", { mode: "timestamp" }).defaultNow(),
   },
   (table) => ({
+    roundIdx: index("chat_messages_round_idx").on(table.round_key),
     senderIdx: index("chat_messages_sender_idx").on(table.sender_id),
     receiverIdx: index("chat_messages_receiver_idx").on(table.receiver_id),
     pairCreatedIdx: index("chat_messages_pair_created_idx").on(
+      table.sender_id,
+      table.receiver_id,
+      table.created_at
+    ),
+    roundPairCreatedIdx: index("chat_messages_round_pair_created_idx").on(
+      table.round_key,
       table.sender_id,
       table.receiver_id,
       table.created_at

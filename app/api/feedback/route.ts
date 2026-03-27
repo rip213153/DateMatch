@@ -1,13 +1,15 @@
-﻿import { appendFile, mkdir } from "fs/promises";
+import { appendFile, mkdir } from "fs/promises";
 import path from "path";
-import { NextResponse } from "next/server";
 import { sendFeedbackEmail } from "@/lib/email";
+import {
+  apiSuccess,
+  assertApi,
+  handleApiRouteError,
+  readJsonBody,
+  readTrimmedString,
+} from "@/lib/api-route";
 
 export const dynamic = "force-dynamic";
-
-function normalizeText(value: unknown) {
-  return String(value ?? "").trim();
-}
 
 async function appendFeedbackLog(record: Record<string, unknown>) {
   const dir = path.join(process.cwd(), "tmp", "feedback");
@@ -23,18 +25,19 @@ export async function POST(request: Request) {
   const submittedAt = new Date().toISOString();
 
   try {
-    const body = await request.json();
-    source = normalizeText(body?.source) || "unknown";
-    nickname = normalizeText(body?.nickname) || "匿名";
-    content = normalizeText(body?.content);
+    const body = await readJsonBody(request);
+    source = readTrimmedString(body.source) || "unknown";
+    nickname = readTrimmedString(body.nickname) || "匿名";
+    content = readTrimmedString(body.content);
 
-    if (!content) {
-      return NextResponse.json({ success: false, error: "反馈内容不能为空" }, { status: 400 });
-    }
-
-    if (content.length > 2000) {
-      return NextResponse.json({ success: false, error: "反馈内容不能超过 2000 字" }, { status: 400 });
-    }
+    assertApi(content, "反馈内容不能为空", {
+      status: 400,
+      code: "EMPTY_FEEDBACK_CONTENT",
+    });
+    assertApi(content.length <= 2000, "反馈内容不能超过 2000 字", {
+      status: 400,
+      code: "FEEDBACK_CONTENT_TOO_LONG",
+    });
 
     await appendFeedbackLog({
       submittedAt,
@@ -55,7 +58,7 @@ export async function POST(request: Request) {
       emailId: emailResult.id,
     });
 
-    return NextResponse.json({ success: true, emailId: emailResult.id });
+    return apiSuccess({ emailId: emailResult.id });
   } catch (error) {
     await appendFeedbackLog({
       submittedAt,
@@ -66,7 +69,10 @@ export async function POST(request: Request) {
       error: error instanceof Error ? error.message : String(error),
     }).catch(() => undefined);
 
-    console.error("send feedback failed:", error);
-    return NextResponse.json({ success: false, error: "反馈发送失败，请稍后重试" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "反馈发送失败，请稍后重试",
+      code: "FEEDBACK_SUBMIT_FAILED",
+      logMessage: "send feedback failed:",
+    });
   }
 }

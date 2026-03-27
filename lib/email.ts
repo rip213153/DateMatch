@@ -130,8 +130,7 @@ export async function sendMatchResultEmail(params: {
     throw new Error("RESEND_API_KEY is not configured");
   }
 
-  const { email, name, matchCount, viewUrl } = params;
-  const submittedAt = new Date().toLocaleString("zh-CN", { hour12: false });
+  const { email, name, matchCount } = params;
 
   const response = await resend.emails.send({
     from: "DateMatch <onboarding@resend.dev>",

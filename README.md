@@ -1,137 +1,134 @@
-<<<<<<< HEAD
 # DateMatch
 
-![og-image](https://github.com/user-attachments/assets/3e23eb4f-50b4-4995-ac61-102e6492ff18)
+DateMatch 是一个面向校园场景的匹配应用，当前同时支持「恋爱模式」与「找朋友模式」。
+项目围绕问卷测试、资料提交、双向匹配、展示期、点亮确认、聊天互动、反馈收集与运营公告等核心流程构建。
 
-DateMatch is a personality-driven dating platform designed specifically for university students. By analyzing personality traits and compatibility factors, we help students find meaningful connections based on who they truly are.
+## 当前能力
 
-## 🌟 Features
+- 首页展示匹配倒计时、运营公告与模式入口
+- 支持恋爱 / 找朋友双模式独立匹配
+- 匹配规则已切换为双向匹配
+- 支持展示期机制与“关闭雷达退出本轮匹配”
+- 支持资料补充与部分资料修改
+- 支持点亮对方、确认匹配与聊天
+- 支持全局反馈浮窗与首页公告弹窗
+- 支持基础运营后台 `/ops`
 
-- **Personality Analysis**: In-depth assessment of 8 key relationship traits
-- **Visual Insights**: Beautiful radar charts showing personality dimensions
-- **Shareable Results**: Easy-to-share personality cards for social media
-- **Smart Matching**: Compatibility suggestions based on personality traits
-- **Modern UI/UX**: Responsive design with smooth animations
+## 技术栈
 
-## 🚀 Tech Stack
+- `Next.js 14` + App Router
+- `React 18`
+- `TypeScript`
+- `Tailwind CSS`
+- `Radix UI`
+- `Framer Motion`
+- `Drizzle ORM`
+- `better-sqlite3`
+- `Resend`
+- `PostHog`
 
-- **Framework**: Next.js 14 (App Router)
-- **Styling**: Tailwind CSS
-- **Animations**: Framer Motion
-- **Charts**: Recharts
-- **UI Components**: Radix UI
-- **Icons**: Lucide Icons
-- **Database**: Supabase
-- **Deployment**: Vercel
+## 本地开发
 
-## 🛠️ Development
+### 1. 安装依赖
 
-### Prerequisites
-
-- Node.js 18+ 
-- npm or pnpm
-- Supabase account for database
-
-### Getting Started
-
-1. Clone the repository
-```
-git clone https://github.com/yourusername/datematch.git
-cd datematch
-```
-
-2. Install dependencies
-```
+```bash
 npm install
 ```
 
-3. Set up environment variables
-Create a `.env.local` file in the root directory:
-```
-env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+### 2. 配置环境变量
+
+在项目根目录创建 `.env.local`。
+
+最小建议配置：
+
+```bash
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+APP_URL=http://localhost:3000
+AUTH_SESSION_SECRET=replace-with-a-long-random-string
+OPS_DASHBOARD_TOKEN=replace-with-a-secure-token
 ```
 
-4. Generate favicons and icons
-```
-npm run generate-favicon
-```
+按需配置的能力：
 
-5. Start the development server
-```
+- 邮件登录 / 通知：`RESEND_API_KEY`
+- 公众号 / 模板消息：`WECHAT_OFFICIAL_APP_ID`、`WECHAT_OFFICIAL_APP_SECRET`、`WECHAT_TEMPLATE_ID` 等
+- 埋点：`NEXT_PUBLIC_POSTHOG_KEY`、`NEXT_PUBLIC_POSTHOG_HOST`
+- 外部聊天能力：`KAMACHAT_API_URL`、`NEXT_PUBLIC_KAMACHAT_WEB_URL`
+
+### 3. 启动开发环境
+
+常规启动：
+
+```bash
 npm run dev
 ```
 
-The app will be available at `http://localhost:3000`
+如果当前 Windows / 桌面环境里遇到终端权限或启动稳定性问题，也可以使用：
 
-### Project Structure
-```
-datematch/
-├── app/ # Next.js app directory
-│ ├── api/ # API routes
-│ ├── components/ # Shared components
-│ ├── data/ # Data models and types
-│ └── [routes]/ # App routes
-├── public/ # Static assets
-├── scripts/ # Build scripts
-└── components/ # UI components
+```bash
+npm run dev:hidden
 ```
 
+### 4. 常用检查命令
 
-## 🎨 Design System
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
 
-- **Colors**: Pink (#ec4899) to Purple (#8b5cf6) gradient theme
-- **Typography**: Inter font family
-- **Components**: Custom UI components built with Radix UI
-- **Animations**: Page transitions and micro-interactions
+## 数据与存储
 
-## 🔗 Links
+- 本地开发默认使用 SQLite
+- 项目会自动创建两个数据库文件：
+  - `datematch.db`：恋爱模式
+  - `datematch-friendship.db`：找朋友模式
+- 构建时会自动检查并补齐必要表结构
 
-- Website: [datematch.lol](https://datematch.lol)
-- Creator: [@imalexwang](https://twitter.com/imalexwang)
+## 目录说明
 
----
+- `app`：页面、路由与 API
+- `components`：通用组件与业务组件
+- `lib`：数据库访问、业务逻辑、hooks、工具函数
+- `app/data`：首页公告、结果文案、选项配置等静态内容
+- `docs`：产品机制文档与埋点方案
+- `tests`：规则测试与基础测试
+- `scripts`：开发与构建辅助脚本
+- `public`：静态资源
+- `tmp`：本地运行产物、运营覆盖文件与日志
 
-Built with ❤️ for university students
-=======
-# match
+## 运营与配置
 
-#### 介绍
-{**以下是 Gitee 平台说明，您可以替换此简介**
-Gitee 是 OSCHINA 推出的基于 Git 的代码托管平台（同时支持 SVN）。专为开发者提供稳定、高效、安全的云端软件开发协作平台
-无论是个人、团队、或是企业，都能够用 Gitee 实现代码托管、项目管理、协作开发。企业项目请看 [https://gitee.com/enterprises](https://gitee.com/enterprises)}
+### 首页公告
 
-#### 软件架构
-软件架构说明
+- 默认公告配置：`app/data/homeAnnouncement.ts`
+- 运营后台覆盖文件：`tmp/ops/home-announcement.override.json`
 
+### 运营后台
 
-#### 安装教程
+- 路由：`/ops`
+- 访问依赖环境变量：`OPS_DASHBOARD_TOKEN`
+- 当前后台主要支持：
+  - 查看公告当前生效内容
+  - 在线覆盖首页公告
+  - 查看匹配轮次与模式概览
+  - 查看最近反馈与处理状态
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+## 文档
 
-#### 使用说明
+- 产品机制：`docs/product-mechanism.md`
+- 埋点方案：`docs/analytics-plan.md`
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+## 发布前建议
 
-#### 参与贡献
+- 上传前至少执行一次 `npm run build`
+- 不要把 `.env.local`、`.next`、`tmp` 日志文件、本地 SQLite 数据库一起提交到线上
+- 生产环境请在服务器或平台环境变量中配置 `OPS_DASHBOARD_TOKEN`、`AUTH_SESSION_SECRET` 等敏感项
+- 如果线上数据库结构已与当前仓库保持一致，代码更新通常不会影响线上已有数据
 
-1.  Fork 本仓库
-2.  新建 Feat_xxx 分支
-3.  提交代码
-4.  新建 Pull Request
+## 维护建议
 
-
-#### 特技
-
-1.  使用 Readme\_XXX.md 来支持不同的语言，例如 Readme\_en.md, Readme\_zh.md
-2.  Gitee 官方博客 [blog.gitee.com](https://blog.gitee.com)
-3.  你可以 [https://gitee.com/explore](https://gitee.com/explore) 这个地址来了解 Gitee 上的优秀开源项目
-4.  [GVP](https://gitee.com/gvp) 全称是 Gitee 最有价值开源项目，是综合评定出的优秀开源项目
-5.  Gitee 官方提供的使用手册 [https://gitee.com/help](https://gitee.com/help)
-6.  Gitee 封面人物是一档用来展示 Gitee 会员风采的栏目 [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
->>>>>>> e5d1f0c5f6dbe52d97fadbd7e8ee8f48688c4f69
+- 修改匹配规则时，同时检查展示期、聊天权限、雷达状态与资料编辑边界
+- 修改公告、首页文案、活动说明时，优先走配置层，不要散落在页面里硬编码
+- 新功能合入前，优先保持 `lint`、`typecheck`、`test`、`build` 全绿

@@ -3,6 +3,8 @@ import { createWeChatBindingState } from "@/lib/wechat-state";
 import { buildWeChatOAuthUrl, getWeChatConfig, isWeChatOAuthConfigured } from "@/lib/wechat";
 import { resolveQuizMode } from "@/lib/database";
 
+export const dynamic = "force-dynamic";
+
 function toPositiveInt(value: unknown) {
   if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
   if (typeof value === "string") {

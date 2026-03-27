@@ -1,8 +1,9 @@
 import { desc, eq, or } from "drizzle-orm";
 import { NextResponse } from "next/server";
+import { normalizeChatRoundKey } from "@/lib/chat-conversations";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { getMatchSchedule } from "@/lib/match-schedule";
-import { getMutualPairRowsForUser, getMutualTargetUserId } from "@/lib/mutual-matching";
+import { buildMutualRoundKey, getMutualPairRowsForUser, getMutualTargetUserId } from "@/lib/mutual-matching";
 import { getProfileRowsForMode } from "@/lib/profile-updates";
 import { normalizeProfiles } from "@/lib/profile-normalizer";
 import { chatMessages } from "@/lib/schema";
@@ -76,6 +77,7 @@ export async function GET(request: Request) {
     const mutualPairRows = schedule.isInDisplayWindow
       ? await getMutualPairRowsForUser(userId, mode, profileRows, schedule.releaseAt, now)
       : [];
+    const currentRoundKey = schedule.isInDisplayWindow ? buildMutualRoundKey(mode, schedule.releaseAt) : null;
 
     const pairScoreMap = new Map(
       mutualPairRows.map((pairRow) => [getMutualTargetUserId(pairRow, userId), Number(pairRow.pair_score)])
@@ -85,6 +87,7 @@ export async function GET(request: Request) {
     const messageRows = await db
       .select({
         id: chatMessages.id,
+        round_key: chatMessages.round_key,
         sender_id: chatMessages.sender_id,
         receiver_id: chatMessages.receiver_id,
         content: chatMessages.content,
@@ -96,12 +99,29 @@ export async function GET(request: Request) {
 
     const visibleContactIds = new Set<number>(Array.from(pairScoreMap.keys()));
     const latestMessageMap = new Map<number, { content: string; createdAt: string | null }>();
+    const historyRoundMap = new Map<number, string | null>();
 
     for (const row of messageRows) {
       const contactId: number = row.sender_id === userId ? row.receiver_id : row.sender_id;
       if (contactId === userId) continue;
 
-      visibleContactIds.add(contactId);
+      const messageRoundKey = normalizeChatRoundKey(row.round_key);
+      const isCurrentTopMatch = pairScoreMap.has(contactId);
+
+      if (isCurrentTopMatch) {
+        if (currentRoundKey && messageRoundKey === currentRoundKey && !latestMessageMap.has(contactId)) {
+          latestMessageMap.set(contactId, {
+            content: row.content,
+            createdAt: toIsoString(row.created_at),
+          });
+        }
+        continue;
+      }
+
+      if (!historyRoundMap.has(contactId)) {
+        historyRoundMap.set(contactId, messageRoundKey);
+        visibleContactIds.add(contactId);
+      }
 
       if (!latestMessageMap.has(contactId)) {
         latestMessageMap.set(contactId, {
@@ -137,14 +157,26 @@ export async function GET(request: Request) {
       })
       .filter((item): item is NonNullable<typeof item> => item !== null)
       .sort((a, b) => {
+        if (a.isTopMatch !== b.isTopMatch) return a.isTopMatch ? -1 : 1;
         const aTime = a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0;
         const bTime = b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0;
         if (aTime !== bTime) return bTime - aTime;
-        if (a.isTopMatch !== b.isTopMatch) return a.isTopMatch ? -1 : 1;
         if (a.rankScore !== b.rankScore) return b.rankScore - a.rankScore;
         return a.id - b.id;
       })
-      .map(({ rankScore: _rankScore, isTopMatch: _isTopMatch, ...item }) => item);
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        age: item.age,
+        university: item.university,
+        lastMessage: item.lastMessage,
+        lastMessageAt: item.lastMessageAt,
+        email: item.email,
+        ideal_date: item.ideal_date,
+        ideal_date_tags: item.ideal_date_tags,
+        bio: item.bio,
+        interests: item.interests,
+      }));
 
     return NextResponse.json({
       success: true,
