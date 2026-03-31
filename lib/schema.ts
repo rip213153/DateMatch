@@ -141,6 +141,9 @@ export const chatNotificationEvents = sqliteTable(
     status: text("status", { enum: ["PENDING", "PROCESSED", "FAILED", "SKIPPED"] }).notNull().default("PENDING"),
     last_error: text("last_error"),
     consumed_at: integer("consumed_at", { mode: "timestamp" }),
+    email_status: text("email_status", { enum: ["PENDING", "PROCESSED", "FAILED", "SKIPPED"] }).notNull().default("PENDING"),
+    email_last_error: text("email_last_error"),
+    email_consumed_at: integer("email_consumed_at", { mode: "timestamp" }),
     created_at: integer("created_at", { mode: "timestamp" }).defaultNow(),
   },
   (table) => ({
@@ -149,6 +152,33 @@ export const chatNotificationEvents = sqliteTable(
       table.status,
       table.created_at
     ),
+    receiverEmailStatusIdx: index("chat_notification_events_receiver_email_status_idx").on(
+      table.receiver_id,
+      table.email_status,
+      table.created_at
+    ),
     messageIdx: index("chat_notification_events_message_idx").on(table.message_id),
+  })
+);
+
+export const chatEmailReminderWindows = sqliteTable(
+  "chat_email_reminder_windows",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sender_id: integer("sender_id").notNull(),
+    receiver_id: integer("receiver_id").notNull(),
+    last_sent_at: integer("last_sent_at", { mode: "timestamp" }).notNull(),
+    created_at: integer("created_at", { mode: "timestamp" }).defaultNow(),
+    updated_at: integer("updated_at", { mode: "timestamp" }).defaultNow(),
+  },
+  (table) => ({
+    senderReceiverUnique: uniqueIndex("chat_email_reminder_windows_sender_receiver_unique").on(
+      table.sender_id,
+      table.receiver_id
+    ),
+    receiverLastSentIdx: index("chat_email_reminder_windows_receiver_last_sent_idx").on(
+      table.receiver_id,
+      table.last_sent_at
+    ),
   })
 );

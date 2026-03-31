@@ -2,6 +2,7 @@ import { and, eq, lte } from "drizzle-orm";
 import type { QuizMode } from "@/app/data/types";
 import { serializeIdealPreferenceTags } from "@/app/data/idealPreferenceTags";
 import { getDbForMode } from "@/lib/database";
+import { serializeInterestValues } from "@/lib/interest-tags";
 import { getMatchSchedule } from "@/lib/match-schedule";
 import { profileUpdateDrafts, profiles } from "@/lib/schema";
 
@@ -34,22 +35,7 @@ function normalizeEmail(value: unknown) {
 }
 
 function normalizeInterests(value: unknown) {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => normalizeString(item))
-      .filter(Boolean)
-      .join(", ");
-  }
-
-  if (typeof value === "string") {
-    return value
-      .split(/[\n,，、;；|]+/)
-      .map((item) => item.trim())
-      .filter(Boolean)
-      .join(", ");
-  }
-
-  return "";
+  return serializeInterestValues(value);
 }
 
 function normalizeInteger(value: unknown) {

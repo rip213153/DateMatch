@@ -193,8 +193,14 @@ export default function FindFriendsPage() {
             </section>
 
             <Button type="submit" disabled={submitting} className="h-12 rounded-2xl bg-gradient-to-r from-sky-500 to-cyan-500 text-base font-bold text-white shadow-lg shadow-sky-500/20 hover:from-sky-600 hover:to-cyan-600">
-              {submitting ? "提交中..." : "提交搭子档案"}
+              {submitting ? "正在保存档案..." : "提交搭子档案"}
             </Button>
+            {error ? <p className="text-sm text-red-600" role="alert">{error}</p> : null}
+            {submitting ? (
+              <p className="text-sm text-gray-500" aria-live="polite">
+                正在提交你的搭子档案，保存完成后会自动弹出确认窗口。
+              </p>
+            ) : null}
           </div>
         </form>
       </div>

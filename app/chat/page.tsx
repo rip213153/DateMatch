@@ -129,7 +129,7 @@ function getConfirmationCopy(status: MatchConfirmationStatus | null) {
 
   if (status.selfConfirmed) {
     return {
-      title: "你已确认对方",
+      title: "你已向对方表达心意",
       description: "你已经表达过兴趣，现在等待对方回应。",
       actionLabel: "取消确认",
       actionDisabled: false,
@@ -138,7 +138,7 @@ function getConfirmationCopy(status: MatchConfirmationStatus | null) {
 
   if (status.otherConfirmed) {
     return {
-      title: "对方已确认你",
+      title: "对方已表达心意",
       description: "对方已经表达兴趣，你可以决定是否回应确认。",
       actionLabel: "回应确认",
       actionDisabled: false,

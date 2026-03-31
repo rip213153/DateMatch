@@ -38,6 +38,10 @@ function parseDescription(value: string) {
     .filter(Boolean);
 }
 
+function normalizeTagList(tags: string[]) {
+  return Array.from(new Set(tags.map((item) => item.trim()).filter(Boolean)));
+}
+
 export function mergeCategorizedInputs(selectedTags: string[], description: string, mergeDescriptionAsTags: boolean, maxTags: number) {
   if (!mergeDescriptionAsTags) {
     return selectedTags.slice(0, maxTags);
@@ -116,6 +120,13 @@ export function CategorizedTagEditor({
     () => mergeCategorizedInputs(selectedTags, description, mergeDescriptionAsTags, maxTags),
     [description, maxTags, mergeDescriptionAsTags, selectedTags],
   );
+  const mergedRawTags = useMemo(
+    () =>
+      mergeDescriptionAsTags
+        ? normalizeTagList([...selectedTags, ...parseDescription(description)])
+        : normalizeTagList(selectedTags),
+    [description, mergeDescriptionAsTags, selectedTags],
+  );
 
   const toggleTag = (tag: string) => {
     const isActive = selectedTags.includes(tag);
@@ -124,7 +135,11 @@ export function CategorizedTagEditor({
       return;
     }
 
-    if (selectedTags.length >= maxTags) {
+    const limitReached = mergeDescriptionAsTags
+      ? mergedRawTags.length >= maxTags && !mergedRawTags.includes(tag)
+      : selectedTags.length >= maxTags;
+
+    if (limitReached) {
       return;
     }
 
@@ -176,14 +191,20 @@ export function CategorizedTagEditor({
           <div className="flex flex-wrap gap-2.5">
             {visibleTags.map((tag) => {
               const isActive = selectedTags.includes(tag);
+              const isDisabled = !isActive
+                ? mergeDescriptionAsTags
+                  ? mergedRawTags.length >= maxTags && !mergedRawTags.includes(tag)
+                  : selectedTags.length >= maxTags
+                : false;
               return (
                 <button
                   key={tag}
                   type="button"
                   onClick={() => toggleTag(tag)}
+                  disabled={isDisabled}
                   className={`rounded-full px-4 py-2 text-sm font-medium transition ${
                     isActive ? theme.activeTagClassName : theme.tagClassName
-                  }`}
+                  } ${isDisabled ? "cursor-not-allowed opacity-50" : ""}`}
                 >
                   {tag}
                 </button>

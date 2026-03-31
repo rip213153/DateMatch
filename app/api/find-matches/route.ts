@@ -1,13 +1,10 @@
-import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import type { UserProfile } from "@/app/data/types";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
-import { getBaseUrl, sendMatchResultEmail } from "@/lib/email";
+import { resolveQuizMode } from "@/lib/database";
 import { getMatchSchedule, isOptedOutForRound } from "@/lib/match-schedule";
 import { ensureMutualPairsForRound, getMutualMatchesForUser } from "@/lib/mutual-matching";
 import { getProfileRowsForMode } from "@/lib/profile-updates";
 import { normalizeProfile } from "@/lib/profile-normalizer";
-import { profiles } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +64,10 @@ async function findMatchesByUserId(userId: number, mode: "romance" | "friendship
   }
 
   const currentUser = normalizeProfile(currentUserRow);
-  const isEligibleForCurrentRound = isEligibleForRelease(currentUserRow.eligible_release_at, schedule.releaseAt);
+  const isEligibleForCurrentRound = isEligibleForRelease(
+    currentUserRow.eligible_release_at,
+    schedule.releaseAt
+  );
   const shouldLoadMutualMatches = schedule.isInDisplayWindow && isEligibleForCurrentRound;
   const matches = shouldLoadMutualMatches
     ? await (async () => {
@@ -78,8 +78,9 @@ async function findMatchesByUserId(userId: number, mode: "romance" | "friendship
 
   return {
     currentUser,
-    emailSentAt: currentUserRow.email_sent_at ? new Date(currentUserRow.email_sent_at).getTime() : null,
-    optOutUntil: currentUserRow.match_opt_out_until ? new Date(currentUserRow.match_opt_out_until).getTime() : null,
+    optOutUntil: currentUserRow.match_opt_out_until
+      ? new Date(currentUserRow.match_opt_out_until).getTime()
+      : null,
     isOptedOutForRound: isOptedOutForRound(currentUserRow.match_opt_out_until, now),
     isEligibleForCurrentRound,
     eligibleReleaseAt: toTimestamp(currentUserRow.eligible_release_at),
@@ -91,7 +92,9 @@ function buildClosedResponse(
   result: NonNullable<Awaited<ReturnType<typeof findMatchesByUserId>>>,
   now: Date,
   mode: string,
-  overrides?: Partial<ReturnType<typeof buildSchedulePayload>> & { isQueuedForNextRound?: boolean }
+  overrides?: Partial<ReturnType<typeof buildSchedulePayload>> & {
+    isQueuedForNextRound?: boolean;
+  }
 ) {
   const schedulePayload = {
     ...buildSchedulePayload(now),
@@ -112,54 +115,11 @@ function buildClosedResponse(
   });
 }
 
-async function maybeSendMatchEmail(
-  result: NonNullable<Awaited<ReturnType<typeof findMatchesByUserId>>>,
-  releaseAt: number,
-  now: Date,
-  mode: "romance" | "friendship"
-) {
-  const oneDayInMs = 24 * 60 * 60 * 1000;
-  const nowTime = now.getTime();
-
-  if (nowTime < releaseAt || nowTime >= releaseAt + oneDayInMs || result.matches.length === 0 || result.isOptedOutForRound) {
-    return;
-  }
-
-  const user = result.currentUser;
-  const sentAt = result.emailSentAt;
-
-  if (!user.email) {
-    return;
-  }
-
-  if (sentAt !== null && Number.isFinite(sentAt) && sentAt >= releaseAt && sentAt < releaseAt + oneDayInMs) {
-    return;
-  }
-
-  const viewUrl = `${getBaseUrl()}/dev-channel-2${mode === "friendship" ? "?mode=friendship" : ""}`;
-
-  sendMatchResultEmail({
-    email: user.email,
-    name: user.name || user.email.split("@")[0],
-    matchCount: result.matches.length,
-    viewUrl,
-  })
-    .then(() => {
-      return getDbForMode(mode).update(profiles).set({ email_sent_at: new Date() }).where(eq(profiles.id, Number(user.id)));
-    })
-    .catch((error) => {
-      console.error("发送匹配结果邮件失败:", error);
-    });
-}
-
 async function buildOpenResponse(
   result: NonNullable<Awaited<ReturnType<typeof findMatchesByUserId>>>,
   now: Date,
   mode: "romance" | "friendship"
 ) {
-  const schedule = getMatchSchedule(now);
-  await maybeSendMatchEmail(result, schedule.releaseAt, now, mode);
-
   return NextResponse.json({
     success: true,
     mode,

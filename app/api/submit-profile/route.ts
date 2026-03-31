@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { serializeIdealPreferenceTags } from "@/app/data/idealPreferenceTags";
 import {
   apiSuccess,
@@ -10,10 +10,17 @@ import {
 } from "@/lib/api-route";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { sendConfirmationEmail } from "@/lib/email";
+import { INTEREST_TAG_LIMIT, parseInterestValues, serializeInterestValues } from "@/lib/interest-tags";
 import { getEligibleReleaseAt, getMatchSchedule } from "@/lib/match-schedule";
 import { profiles } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
+
+function queueConfirmationEmail(email: string) {
+  void sendConfirmationEmail(email).catch((emailError) => {
+    console.warn("Confirmation email skipped:", emailError);
+  });
+}
 
 export async function POST(request: Request) {
   try {
@@ -21,6 +28,7 @@ export async function POST(request: Request) {
     const mode = resolveQuizMode(body.mode);
     const db = getDbForMode(mode);
     const now = new Date();
+    const interestValues = parseInterestValues(body.interests);
     const payload = {
       name: readTrimmedString(body.name),
       age: Number.parseInt(readTrimmedString(body.age), 10),
@@ -28,7 +36,7 @@ export async function POST(request: Request) {
       seeking: readTrimmedString(body.seeking),
       university: readTrimmedString(body.university),
       email: readLowercaseEmail(body.email),
-      interests: readTrimmedString(body.interests),
+      interests: serializeInterestValues(interestValues),
       ideal_date: readTrimmedString(body.idealDate ?? body.idealHangout),
       ideal_date_tags: serializeIdealPreferenceTags(body.idealDateTags ?? body.idealHangoutTags),
       personality_profile: body.personalityProfile,
@@ -44,6 +52,15 @@ export async function POST(request: Request) {
       (payload.ideal_date || payload.ideal_date_tags !== "[]") &&
       payload.personality_profile;
 
+    assertApi(
+      interestValues.length <= INTEREST_TAG_LIMIT,
+      `\u5174\u8da3\u7231\u597d\u6700\u591a\u53ea\u80fd\u9009\u62e9 ${INTEREST_TAG_LIMIT} \u4e2a\u6807\u7b7e\u3002`,
+      {
+        status: 400,
+        code: "INTEREST_TAG_LIMIT_EXCEEDED",
+      },
+    );
+
     assertApi(hasRequiredFields && payload.gender && payload.seeking, "Invalid profile payload", {
       status: 400,
       code: "INVALID_PROFILE_PAYLOAD",
@@ -52,8 +69,8 @@ export async function POST(request: Request) {
     const existingProfiles = await db
       .select({ id: profiles.id, eligible_release_at: profiles.eligible_release_at })
       .from(profiles)
-      .where(sql`lower(${profiles.email}) = ${payload.email}`)
-      .orderBy(desc(profiles.id));
+      .where(eq(profiles.email, payload.email))
+      .limit(1);
 
     let profile;
 
@@ -81,11 +98,7 @@ export async function POST(request: Request) {
         .returning();
     }
 
-    try {
-      await sendConfirmationEmail(payload.email);
-    } catch (emailError) {
-      console.warn("Confirmation email skipped:", emailError);
-    }
+    queueConfirmationEmail(payload.email);
 
     return apiSuccess({
       profile,

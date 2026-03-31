@@ -8,6 +8,8 @@ import type {
 import { getDbForMode } from "@/lib/database";
 import { chatNotificationEvents } from "@/lib/schema";
 
+type ChatNotificationEmailStatus = "PENDING" | "PROCESSED" | "FAILED" | "SKIPPED";
+
 type ChatNotificationEventRow = {
   id: number;
   message_id: number;
@@ -18,6 +20,12 @@ type ChatNotificationEventRow = {
   last_error: string | null;
   created_at: Date | null;
   consumed_at: Date | null;
+};
+
+type ChatNotificationEmailEventRow = ChatNotificationEventRow & {
+  email_status: ChatNotificationEmailStatus;
+  email_last_error: string | null;
+  email_consumed_at: Date | null;
 };
 
 function toIsoString(value: Date | string | number | null | undefined) {
@@ -39,6 +47,15 @@ function serializeEvent(row: ChatNotificationEventRow): ChatNotificationEvent {
     lastError: row.last_error,
     createdAt: toIsoString(row.created_at),
     consumedAt: toIsoString(row.consumed_at),
+  };
+}
+
+function serializeEmailEvent(row: ChatNotificationEmailEventRow) {
+  return {
+    ...serializeEvent(row),
+    emailStatus: row.email_status,
+    emailLastError: row.email_last_error,
+    emailConsumedAt: toIsoString(row.email_consumed_at),
   };
 }
 
@@ -152,4 +169,87 @@ export async function markChatNotificationEvent(
     });
 
   return updated ? serializeEvent(updated) : null;
+}
+
+export async function listChatEmailNotificationEvents(
+  mode: QuizMode,
+  options: {
+    receiverId?: number | null;
+    status?: ChatNotificationEmailStatus | null;
+    limit?: number;
+  } = {}
+) {
+  const db = getDbForMode(mode);
+  const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
+  const receiverId = options.receiverId ?? null;
+  const status = options.status ?? null;
+
+  const whereClause =
+    receiverId && status
+      ? and(
+          eq(chatNotificationEvents.receiver_id, receiverId),
+          eq(chatNotificationEvents.email_status, status)
+        )
+      : receiverId
+        ? eq(chatNotificationEvents.receiver_id, receiverId)
+        : status
+          ? eq(chatNotificationEvents.email_status, status)
+          : undefined;
+
+  const rows = await db
+    .select({
+      id: chatNotificationEvents.id,
+      message_id: chatNotificationEvents.message_id,
+      sender_id: chatNotificationEvents.sender_id,
+      receiver_id: chatNotificationEvents.receiver_id,
+      event_type: chatNotificationEvents.event_type,
+      status: chatNotificationEvents.status,
+      last_error: chatNotificationEvents.last_error,
+      consumed_at: chatNotificationEvents.consumed_at,
+      email_status: chatNotificationEvents.email_status,
+      email_last_error: chatNotificationEvents.email_last_error,
+      email_consumed_at: chatNotificationEvents.email_consumed_at,
+      created_at: chatNotificationEvents.created_at,
+    })
+    .from(chatNotificationEvents)
+    .where(whereClause)
+    .orderBy(desc(chatNotificationEvents.created_at), desc(chatNotificationEvents.id))
+    .limit(limit);
+
+  return rows.map(serializeEmailEvent);
+}
+
+export async function markChatEmailNotificationEvent(
+  mode: QuizMode,
+  input: {
+    eventId: number;
+    status: Exclude<ChatNotificationEmailStatus, "PENDING">;
+    lastError?: string | null;
+  }
+) {
+  const db = getDbForMode(mode);
+  const [updated] = await db
+    .update(chatNotificationEvents)
+    .set({
+      email_status: input.status,
+      email_last_error: input.lastError?.trim() || null,
+      email_consumed_at: new Date(),
+    })
+    .where(eq(chatNotificationEvents.id, input.eventId))
+    .returning({
+      id: chatNotificationEvents.id,
+      message_id: chatNotificationEvents.message_id,
+      sender_id: chatNotificationEvents.sender_id,
+      receiver_id: chatNotificationEvents.receiver_id,
+      event_type: chatNotificationEvents.event_type,
+      status: chatNotificationEvents.status,
+      last_error: chatNotificationEvents.last_error,
+      consumed_at: chatNotificationEvents.consumed_at,
+      email_status: chatNotificationEvents.email_status,
+      email_last_error: chatNotificationEvents.email_last_error,
+      email_consumed_at: chatNotificationEvents.email_consumed_at,
+      created_at: chatNotificationEvents.created_at,
+    });
+
+  return updated ? serializeEmailEvent(updated) : null;
 }

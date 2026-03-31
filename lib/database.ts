@@ -267,11 +267,17 @@ function ensureDatabase(sqlite: InstanceType<typeof BetterSqlite3>, label: strin
         status TEXT NOT NULL DEFAULT 'PENDING',
         last_error TEXT,
         consumed_at INTEGER,
+        email_status TEXT NOT NULL DEFAULT 'PENDING',
+        email_last_error TEXT,
+        email_consumed_at INTEGER,
         created_at INTEGER DEFAULT (strftime('%s', 'now'))
       );
 
       CREATE INDEX IF NOT EXISTS chat_notification_events_receiver_status_idx
         ON chat_notification_events(receiver_id, status, created_at);
+
+      CREATE INDEX IF NOT EXISTS chat_notification_events_receiver_email_status_idx
+        ON chat_notification_events(receiver_id, email_status, created_at);
 
       CREATE INDEX IF NOT EXISTS chat_notification_events_message_idx
         ON chat_notification_events(message_id);
@@ -279,6 +285,66 @@ function ensureDatabase(sqlite: InstanceType<typeof BetterSqlite3>, label: strin
     console.log(`Ensured chat_notification_events table exists (${label})`);
   } catch (error) {
     console.error(`Failed to ensure chat_notification_events table (${label}):`, error);
+  }
+
+  try {
+    sqlite.exec("ALTER TABLE chat_notification_events ADD COLUMN email_status TEXT NOT NULL DEFAULT 'PENDING'");
+    console.log(`Added chat_notification_events.email_status column (${label})`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("duplicate column name")) {
+      console.error(`Failed to ensure chat_notification_events.email_status column (${label}):`, error);
+    }
+  }
+
+  try {
+    sqlite.exec("ALTER TABLE chat_notification_events ADD COLUMN email_last_error TEXT");
+    console.log(`Added chat_notification_events.email_last_error column (${label})`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("duplicate column name")) {
+      console.error(`Failed to ensure chat_notification_events.email_last_error column (${label}):`, error);
+    }
+  }
+
+  try {
+    sqlite.exec("ALTER TABLE chat_notification_events ADD COLUMN email_consumed_at INTEGER");
+    console.log(`Added chat_notification_events.email_consumed_at column (${label})`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("duplicate column name")) {
+      console.error(`Failed to ensure chat_notification_events.email_consumed_at column (${label}):`, error);
+    }
+  }
+
+  try {
+    sqlite.exec(`
+      CREATE INDEX IF NOT EXISTS chat_notification_events_receiver_email_status_idx
+        ON chat_notification_events(receiver_id, email_status, created_at);
+    `);
+    console.log(`Ensured chat_notification_events email indexes exist (${label})`);
+  } catch (error) {
+    console.error(`Failed to ensure chat_notification_events email indexes (${label}):`, error);
+  }
+
+  try {
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS chat_email_reminder_windows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER NOT NULL,
+        receiver_id INTEGER NOT NULL,
+        last_sent_at INTEGER NOT NULL,
+        created_at INTEGER DEFAULT (strftime('%s', 'now')),
+        updated_at INTEGER DEFAULT (strftime('%s', 'now')),
+        UNIQUE(sender_id, receiver_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS chat_email_reminder_windows_receiver_last_sent_idx
+        ON chat_email_reminder_windows(receiver_id, last_sent_at);
+    `);
+    console.log(`Ensured chat_email_reminder_windows table exists (${label})`);
+  } catch (error) {
+    console.error(`Failed to ensure chat_email_reminder_windows table (${label}):`, error);
   }
 
   try {
