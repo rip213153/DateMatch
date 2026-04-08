@@ -1,9 +1,11 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { profiles } from "@/lib/schema";
-import { verifyWeChatBindingState } from "@/lib/wechat-state";
+import { readSessionFromRequest } from "@/lib/server-auth";
 import { exchangeWeChatCode } from "@/lib/wechat";
+import { isWeChatBindAllowed, resolveWeChatBindIdentity } from "@/lib/wechat-bind-route-core";
+import { verifyWeChatBindingState } from "@/lib/wechat-state";
 
 function toPositiveInt(value: unknown) {
   if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
@@ -19,7 +21,7 @@ async function bindOpenIdToProfile(
   userId: number,
   openId: string,
   unionId: string | null,
-  noticeOptIn: boolean
+  noticeOptIn: boolean,
 ) {
   const db = getDbForMode(mode);
   const [profile] = await db
@@ -56,18 +58,39 @@ export async function POST(request: Request) {
     let unionId: string | null = null;
     let resolvedOpenId = openId;
 
-    if (state) {
-      const verified = verifyWeChatBindingState(state);
-      if (!verified) {
-        return NextResponse.json({ error: "Invalid or expired WeChat state" }, { status: 400 });
-      }
+    const session = readSessionFromRequest(request);
+    const identity = resolveWeChatBindIdentity(
+      {
+        explicitMode,
+        explicitUserId,
+        state,
+        session,
+      },
+      verifyWeChatBindingState,
+    );
 
-      userId = verified.userId;
-      mode = verified.mode;
+    if (!identity.ok) {
+      return NextResponse.json({ error: identity.error }, { status: identity.status });
     }
 
-    if (!userId) {
-      return NextResponse.json({ error: "Missing valid userId" }, { status: 400 });
+    userId = identity.userId;
+    mode = identity.mode;
+    const authenticatedSession = identity.session;
+
+    const db = getDbForMode(mode);
+    const matchedProfiles = await db
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(sql`lower(${profiles.email}) = ${authenticatedSession.email}`)
+      .limit(1);
+    const authenticatedProfile = matchedProfiles[0] ?? null;
+
+    if (!authenticatedProfile) {
+      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+    }
+
+    if (!isWeChatBindAllowed(authenticatedProfile, userId)) {
+      return NextResponse.json({ error: "You are not allowed to bind another user's WeChat" }, { status: 403 });
     }
 
     if (code) {

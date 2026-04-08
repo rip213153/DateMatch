@@ -118,16 +118,24 @@ export default function DevChannel2Page() {
 
   const checkAuthentication = useCallback(async () => {
     const result = await AuthService.checkAuth();
-    setIsAuthenticated(result.isAuthenticated);
+    const redirect = mode === "friendship" ? "/dev-channel-2?mode=friendship" : "/dev-channel-2";
+    const sessionMode = result.mode;
+    const modeMatches = !sessionMode || sessionMode === mode;
+    const isAuthenticated = result.isAuthenticated && modeMatches;
+
+    setIsAuthenticated(isAuthenticated);
     setCheckingAuth(false);
 
-    if (!result.isAuthenticated) {
-      const redirect = mode === "friendship" ? "/dev-channel-2?mode=friendship" : "/dev-channel-2";
+    if (!isAuthenticated) {
       router.replace(`/login?redirect=${encodeURIComponent(redirect)}&mode=${mode}`);
       return;
     }
 
-    setStoredUserId(AuthService.getStoredUserId(mode));
+    setStoredUserId(
+      Number.isInteger(result.userId) && Number(result.userId) > 0
+        ? Number(result.userId)
+        : AuthService.getStoredUserId(mode),
+    );
   }, [mode, router]);
 
   useEffect(() => {
@@ -264,6 +272,7 @@ export default function DevChannel2Page() {
           <div className="rounded-lg bg-red-50 p-4 text-red-600">{error}</div>
         ) : (
           <MatchStagePanel
+            mode={mode}
             radarOn={radarOn}
             loading={loading}
             updatingRadar={updatingRadar}

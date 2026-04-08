@@ -27,14 +27,14 @@ export default function FindMatchPage() {
     interestsText: "",
     idealDate: "",
     personalityProfile: JSON.stringify({
-      socialStyle: 7.5,
-      emotionalReadiness: 8.5,
-      dateStyle: 6.86,
-      commitment: 10,
-      communication: 8,
-      independence: 8.6,
-      career: 10.5,
-      flexibility: 8.5,
+      approachPace: 6.8,
+      reassuranceNeed: 7.2,
+      boundaryAutonomy: 6.1,
+      emotionalExpression: 7.4,
+      conflictEngagement: 6.9,
+      futureOrientation: 7.8,
+      jealousyRegulation: 6.2,
+      stabilityPreference: 8.1,
     }),
   });
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);

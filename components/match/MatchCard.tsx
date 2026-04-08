@@ -8,8 +8,10 @@ import { MatchCardConfirmationSection } from "@/components/match/MatchCardConfir
 import { MatchCardHeaderSection } from "@/components/match/MatchCardHeaderSection";
 import { MatchCardIceBreakersSection } from "@/components/match/MatchCardIceBreakersSection";
 import type { MatchConfirmationStatus, MatchItem } from "@/components/match/types";
+import type { AuthMode } from "@/lib/auth";
 
 interface MatchCardProps {
+  mode: AuthMode;
   match: MatchItem;
   onNext: () => void;
   onPrev: () => void;
@@ -24,11 +26,14 @@ interface MatchCardProps {
   highlights: string[];
 }
 
-function getConfirmationCopy(status: MatchConfirmationStatus | null) {
+function getConfirmationCopy(mode: AuthMode, status: MatchConfirmationStatus | null) {
   if (!status) {
     return {
-      title: "确认状态加载中",
-      description: "稍等一下，正在同步你们本轮的互选状态。",
+      title: mode === "friendship" ? "在同步本轮回应状态" : "在同步本轮回应状态",
+      description:
+        mode === "friendship"
+          ? "稍等一下，正在更新你们这轮朋友推荐里的回应情况。"
+          : "稍等一下，正在更新你们这轮推荐里的双向回应情况。",
       actionLabel: "加载中",
       actionDisabled: true,
     };
@@ -36,40 +41,53 @@ function getConfirmationCopy(status: MatchConfirmationStatus | null) {
 
   if (status.canMessage || (status.selfConfirmed && status.otherConfirmed)) {
     return {
-      title: "已互相确认",
-      description: "你们已经完成双向确认，可以放心继续聊天啦。",
-      actionLabel: "已互相确认",
+      title: mode === "friendship" ? "你们已经互相回应" : "你们已经互相确认",
+      description:
+        mode === "friendship"
+          ? "这轮推荐已经双向接住，可以放心继续聊下去。"
+          : "你们已经完成双向确认，可以更自然地继续往下聊。",
+      actionLabel: mode === "friendship" ? "已互相回应" : "已互相确认",
       actionDisabled: true,
     };
   }
 
   if (status.selfConfirmed) {
     return {
-      title: "你已确认对方",
-      description: "已为这张卡片点亮，等待对方回应。",
-      actionLabel: "取消确认",
+      title: mode === "friendship" ? "你已经回应对方了" : "你已经点亮对方了",
+      description:
+        mode === "friendship"
+          ? "你已经表达了想继续认识，接下来等对方回应就好。"
+          : "你已经表达了继续靠近的意愿，接下来等对方回应就好。",
+      actionLabel: mode === "friendship" ? "取消回应" : "取消点亮",
       actionDisabled: false,
     };
   }
 
   if (status.otherConfirmed) {
     return {
-      title: "对方已确认你",
-      description: "对方已经表达兴趣，你可以决定是否回应确认。",
-      actionLabel: "回应确认",
+      title: mode === "friendship" ? "对方先回应你了" : "对方先点亮你了",
+      description:
+        mode === "friendship"
+          ? "对方已经表达了想继续认识，你可以决定要不要接住这次连接。"
+          : "对方已经表达了继续了解的兴趣，你可以决定要不要回应这次靠近。",
+      actionLabel: mode === "friendship" ? "回应一下" : "回应点亮",
       actionDisabled: false,
     };
   }
 
   return {
-    title: "可以先点亮一下",
-    description: "点亮后对方会看到你对这次匹配有兴趣，双方都确认后会更容易继续推进。",
-    actionLabel: "点亮 TA",
+    title: mode === "friendship" ? "觉得不错就回应一下" : "有感觉的话可以先点亮",
+    description:
+      mode === "friendship"
+        ? "回应后，对方会知道你愿意继续认识；如果对方也回应，这段连接会更容易继续。"
+        : "点亮后，对方会知道你愿意继续了解；如果对方也点亮，这段关系会更容易自然展开。",
+    actionLabel: mode === "friendship" ? "回应 TA" : "点亮 TA",
     actionDisabled: false,
   };
 }
 
 export function MatchCard({
+  mode,
   match,
   onNext,
   onPrev,
@@ -83,7 +101,7 @@ export function MatchCard({
   iceBreakers,
   highlights,
 }: MatchCardProps) {
-  const confirmationCopy = getConfirmationCopy(confirmationStatus);
+  const confirmationCopy = getConfirmationCopy(mode, confirmationStatus);
 
   return (
     <motion.div
@@ -107,6 +125,7 @@ export function MatchCard({
         className="rounded-[1.6rem] border border-white/70 bg-white/80 p-4 shadow-[0_12px_40px_rgba(236,72,153,0.12)]"
       >
         <MatchCardHeaderSection
+          mode={mode}
           match={match}
           activeIndex={activeIndex}
           totalMatches={totalMatches}
@@ -124,7 +143,7 @@ export function MatchCard({
           onToggleConfirm={onToggleConfirm}
         />
         <MatchCardBioSection bio={match.user.bio} />
-        <MatchCardBreakdownSection breakdown={match.match.breakdown} />
+        <MatchCardBreakdownSection mode={mode} breakdown={match.match.breakdown} />
         <MatchCardActionsSection onStartChat={onStartChat} onOpenProfile={onOpenProfile} />
       </motion.div>
     </motion.div>

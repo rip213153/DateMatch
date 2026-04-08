@@ -27,14 +27,14 @@ export default function FindFriendsPage() {
     interestsText: "",
     idealHangout: "",
     personalityProfile: JSON.stringify({
-      socialEnergy: 7.2,
-      maintenance: 6.5,
-      boundaries: 7.8,
-      spontaneity: 6.9,
-      empathy: 7.6,
-      reliability: 8.2,
-      depth: 7.4,
-      openness: 6.8,
+      connectionFrequency: 6.4,
+      emotionalHolding: 7.5,
+      boundaryClarity: 7.2,
+      repairInitiative: 6.8,
+      dependability: 8.1,
+      differenceOpenness: 6.3,
+      comparisonTolerance: 6.6,
+      lowPressureCompanionship: 7.8,
     }),
   });
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);

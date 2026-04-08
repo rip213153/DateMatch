@@ -1,4 +1,4 @@
-import { ImageResponse } from "next/og";
+﻿import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +14,15 @@ const notoSansScBold = fetch(new URL("../../fonts/NotoSansSC-Bold.otf", import.m
 const RESULT_QR_TARGET = "http://39.107.110.145:3000/";
 const RESULT_QR_IMAGE = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=16&data=${encodeURIComponent(RESULT_QR_TARGET)}`;
 const RESULT_QR_HINT = "扫码查看完整档案并进入 DateMatch";
+
+type QuizMode = "romance" | "friendship";
+type TraitVersion = "legacy" | "v2";
+
+type TraitMetaItem = {
+  key: string;
+  label: string;
+  color: string;
+};
 
 const ROMANCE_DEFAULT_PROFILE = {
   socialStyle: 5,
@@ -37,7 +46,29 @@ const FRIENDSHIP_DEFAULT_PROFILE = {
   openness: 5,
 };
 
-const ROMANCE_TRAIT_META = [
+const ROMANCE_DEFAULT_PROFILE_V2 = {
+  approachPace: 5,
+  reassuranceNeed: 5,
+  boundaryAutonomy: 5,
+  emotionalExpression: 5,
+  conflictEngagement: 5,
+  futureOrientation: 5,
+  jealousyRegulation: 5,
+  stabilityPreference: 5,
+};
+
+const FRIENDSHIP_DEFAULT_PROFILE_V2 = {
+  connectionFrequency: 5,
+  emotionalHolding: 5,
+  boundaryClarity: 5,
+  repairInitiative: 5,
+  dependability: 5,
+  differenceOpenness: 5,
+  comparisonTolerance: 5,
+  lowPressureCompanionship: 5,
+};
+
+const ROMANCE_TRAIT_META: TraitMetaItem[] = [
   { key: "socialStyle", label: "社交", color: "#0ea5e9" },
   { key: "emotionalReadiness", label: "情感", color: "#f43f5e" },
   { key: "dateStyle", label: "约会", color: "#d946ef" },
@@ -48,7 +79,7 @@ const ROMANCE_TRAIT_META = [
   { key: "flexibility", label: "适应", color: "#84cc16" },
 ];
 
-const FRIENDSHIP_TRAIT_META = [
+const FRIENDSHIP_TRAIT_META: TraitMetaItem[] = [
   { key: "socialEnergy", label: "电量", color: "#0ea5e9" },
   { key: "maintenance", label: "维护", color: "#f43f5e" },
   { key: "boundaries", label: "边界", color: "#10b981" },
@@ -59,27 +90,61 @@ const FRIENDSHIP_TRAIT_META = [
   { key: "openness", label: "包容", color: "#84cc16" },
 ];
 
+const ROMANCE_TRAIT_META_V2: TraitMetaItem[] = [
+  { key: "approachPace", label: "接近", color: "#0ea5e9" },
+  { key: "reassuranceNeed", label: "确认", color: "#f43f5e" },
+  { key: "boundaryAutonomy", label: "边界", color: "#10b981" },
+  { key: "emotionalExpression", label: "表达", color: "#d946ef" },
+  { key: "conflictEngagement", label: "修复", color: "#06b6d4" },
+  { key: "futureOrientation", label: "未来", color: "#8b5cf6" },
+  { key: "jealousyRegulation", label: "调节", color: "#f59e0b" },
+  { key: "stabilityPreference", label: "稳定", color: "#84cc16" },
+];
+
+const FRIENDSHIP_TRAIT_META_V2: TraitMetaItem[] = [
+  { key: "connectionFrequency", label: "联结", color: "#0ea5e9" },
+  { key: "emotionalHolding", label: "承接", color: "#f43f5e" },
+  { key: "boundaryClarity", label: "边界", color: "#10b981" },
+  { key: "repairInitiative", label: "修复", color: "#d946ef" },
+  { key: "dependability", label: "靠谱", color: "#06b6d4" },
+  { key: "differenceOpenness", label: "差异", color: "#8b5cf6" },
+  { key: "comparisonTolerance", label: "比较", color: "#f59e0b" },
+  { key: "lowPressureCompanionship", label: "低压", color: "#84cc16" },
+];
+
 function clampTrait(value: unknown): number {
   const num = Number(value);
   if (!Number.isFinite(num)) return 5;
   return Math.max(0, Math.min(10, num));
 }
 
-function parseProfile(raw: string | null, defaults: Record<string, number>) {
-  if (!raw) return { ...defaults };
+function parseRawProfile(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null;
 
   try {
-    const data = JSON.parse(raw) as Record<string, unknown>;
-    return Object.keys(defaults).reduce(
-      (acc, key) => {
-        acc[key] = clampTrait(data[key]);
-        return acc;
-      },
-      {} as Record<string, number>
-    );
+    return JSON.parse(raw) as Record<string, unknown>;
   } catch {
-    return { ...defaults };
+    return null;
   }
+}
+
+function detectProfileVersion(raw: Record<string, unknown> | null, quizMode: QuizMode): TraitVersion {
+  if (!raw) return "legacy";
+
+  const legacyKeys = quizMode === "friendship" ? Object.keys(FRIENDSHIP_DEFAULT_PROFILE) : Object.keys(ROMANCE_DEFAULT_PROFILE);
+  const v2Keys = quizMode === "friendship" ? Object.keys(FRIENDSHIP_DEFAULT_PROFILE_V2) : Object.keys(ROMANCE_DEFAULT_PROFILE_V2);
+
+  const legacyHits = legacyKeys.filter((key) => key in raw).length;
+  const v2Hits = v2Keys.filter((key) => key in raw).length;
+
+  return v2Hits > legacyHits ? "v2" : "legacy";
+}
+
+function parseProfile(raw: Record<string, unknown> | null, defaults: Record<string, number>) {
+  return Object.keys(defaults).reduce((acc, key) => {
+    acc[key] = clampTrait(raw?.[key]);
+    return acc;
+  }, {} as Record<string, number>);
 }
 
 function getSummary(value: number, label: string) {
@@ -190,14 +255,11 @@ async function renderDefaultImage(title: string, description: string) {
       width: 1200,
       height: 630,
       fonts,
-    }
+    },
   );
 }
 
-function renderTraitCard(
-  item: { key: string; label: string; color: string },
-  profile: Record<string, number>
-) {
+function renderTraitCard(item: TraitMetaItem, profile: Record<string, number>) {
   const score = profile[item.key] ?? 5;
   const width = `${Math.round((score / 10) * 100)}%`;
 
@@ -240,13 +302,13 @@ async function renderResultsImage(
   title: string,
   description: string,
   profile: Record<string, number>,
-  traitMeta: Array<{ key: string; label: string; color: string }>,
+  traitMeta: TraitMetaItem[],
   badgeText: string,
   footerText: string,
   highlightTitle: string,
   highlightBody: string,
   adviceTitle: string,
-  adviceBody: string
+  adviceBody: string,
 ) {
   const fonts = await getOgFonts();
   const rows = [traitMeta.slice(0, 2), traitMeta.slice(2, 4), traitMeta.slice(4, 6), traitMeta.slice(6, 8)];
@@ -336,59 +398,28 @@ async function renderResultsImage(
             <span>DateMatch 2026</span>
             <span>{footerText}</span>
           </div>
-
         </div>
 
         <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "16px",
-              padding: "14px 20px",
-              borderRadius: "26px",
-              background: "rgba(255,255,255,0.82)",
-              border: "1px solid rgba(244,114,182,0.14)",
-              boxShadow: "0 18px 48px rgba(219,39,119,0.08)",
-              backdropFilter: "blur(12px)",
-            }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "16px",
+            padding: "14px 20px",
+            borderRadius: "26px",
+            background: "rgba(255,255,255,0.82)",
+            border: "1px solid rgba(244,114,182,0.14)",
+            boxShadow: "0 18px 48px rgba(219,39,119,0.08)",
+            backdropFilter: "blur(12px)",
+          }}
         >
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
-              flex: 1,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 20,
-                fontWeight: 700,
-                color: "#be185d",
-                marginBottom: "4px",
-              }}
-            >
-              {RESULT_QR_HINT}
-            </div>
-            <div
-              style={{
-                fontSize: 14,
-                lineHeight: 1.4,
-                color: "#6b7280",
-              }}
-            >
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", flex: 1 }}>
+            <div style={{ fontSize: 20, fontWeight: 700, color: "#be185d", marginBottom: "4px" }}>{RESULT_QR_HINT}</div>
+            <div style={{ fontSize: 14, lineHeight: 1.4, color: "#6b7280" }}>
               扫码可回到首页，查看完整档案与后续匹配入口
             </div>
-            <div
-              style={{
-                fontSize: 12,
-                color: "#9ca3af",
-                marginTop: "4px",
-              }}
-            >
-              {RESULT_QR_TARGET}
-            </div>
+            <div style={{ fontSize: 12, color: "#9ca3af", marginTop: "4px" }}>{RESULT_QR_TARGET}</div>
           </div>
 
           <div
@@ -407,11 +438,7 @@ async function renderResultsImage(
               alt="DateMatch QR code"
               width="96"
               height="96"
-              style={{
-                display: "block",
-                borderRadius: "8px",
-                background: "#ffffff",
-              }}
+              style={{ display: "block", borderRadius: "8px", background: "#ffffff" }}
             />
           </div>
         </div>
@@ -421,38 +448,87 @@ async function renderResultsImage(
       width: 1080,
       height: 1440,
       fonts,
-    }
+    },
   );
+}
+
+function getResultAssets(quizMode: QuizMode, version: TraitVersion) {
+  if (quizMode === "friendship") {
+    if (version === "v2") {
+      return {
+        defaults: FRIENDSHIP_DEFAULT_PROFILE_V2,
+        traitMeta: FRIENDSHIP_TRAIT_META_V2,
+        badgeText: "DateMatch 友情风格档案",
+        footerText: "校园专属友情风格档案",
+        highlightTitle: "关系亮点",
+        highlightBody: "你更在意怎样被陪伴、怎样维持边界，以及一段友情在你这里怎样才算真正还在。",
+        adviceTitle: "相处建议",
+        adviceBody: "寻找那种既能给到在场、也能给到空间的人，你会更容易进入稳定又舒服的朋友关系。",
+      };
+    }
+
+    return {
+      defaults: FRIENDSHIP_DEFAULT_PROFILE,
+      traitMeta: FRIENDSHIP_TRAIT_META,
+      badgeText: "DateMatch 搭子人格档案",
+      footerText: "校园专属友情人格档案",
+      highlightTitle: "友情亮点",
+      highlightBody: "你的社交节奏、边界感和陪伴方式会决定谁更容易和你成为长期同频的朋友。",
+      adviceTitle: "相处建议",
+      adviceBody: "优先寻找能尊重你节奏、也愿意认真回应的人，友情会更轻松也更长久。",
+    };
+  }
+
+  if (version === "v2") {
+    return {
+      defaults: ROMANCE_DEFAULT_PROFILE_V2,
+      traitMeta: ROMANCE_TRAIT_META_V2,
+      badgeText: "DateMatch 关系风格档案",
+      footerText: "校园专属关系风格档案",
+      highlightTitle: "关系亮点",
+      highlightBody: "你在关系里更在意节奏、安全感、亲近方式和长期方向，而不只是当下有没有火花。",
+      adviceTitle: "关系建议",
+      adviceBody: "保留自己的节奏，也更早表达真实需要，适合你的人会更容易走进你的关系里。",
+    };
+  }
+
+  return {
+    defaults: ROMANCE_DEFAULT_PROFILE,
+    traitMeta: ROMANCE_TRAIT_META,
+    badgeText: "DateMatch 恋爱人格档案",
+    footerText: "校园专属恋爱人格档案",
+    highlightTitle: "关系亮点",
+    highlightBody: "真诚表达、关系稳定感和互动节奏感是你的优势，适合建立清晰又自然的亲密连接。",
+    adviceTitle: "关系建议",
+    adviceBody: "保留自己的边界，同时把真实需求更早说出来，会让合适的人更快靠近你。",
+  };
 }
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const mode = searchParams.get("mode") || "default";
-    const quizMode = searchParams.get("quizMode") === "friendship" ? "friendship" : "romance";
+    const quizMode: QuizMode = searchParams.get("quizMode") === "friendship" ? "friendship" : "romance";
     const title = searchParams.get("title") || "DateMatch";
     const description = searchParams.get("description") || "校园人格匹配与同频推荐";
 
     if (mode === "results") {
-      const defaults = quizMode === "friendship" ? FRIENDSHIP_DEFAULT_PROFILE : ROMANCE_DEFAULT_PROFILE;
-      const traitMeta = quizMode === "friendship" ? FRIENDSHIP_TRAIT_META : ROMANCE_TRAIT_META;
-      const profile = parseProfile(searchParams.get("profile"), defaults);
+      const rawProfile = parseRawProfile(searchParams.get("profile"));
+      const version = detectProfileVersion(rawProfile, quizMode);
+      const assets = getResultAssets(quizMode, version);
+      const profile = parseProfile(rawProfile, assets.defaults);
 
       return await renderResultsImage(
         title,
         description,
         profile,
-        traitMeta,
-        quizMode === "friendship" ? "DateMatch 搭子人格档案" : "DateMatch 恋爱人格档案",
-        quizMode === "friendship" ? "校园专属友情人格档案" : "校园专属恋爱人格档案",
-        quizMode === "friendship" ? "友情亮点" : "关系亮点",
-        quizMode === "friendship"
-          ? "你的社交节奏、边界感和陪伴方式会决定谁更容易和你成为长期同频的朋友。"
-          : "真诚表达、关系稳定感和互动节奏感是你的优势，适合建立清晰又自然的亲密连接。",
-        quizMode === "friendship" ? "相处建议" : "关系建议",
-        quizMode === "friendship"
-          ? "优先寻找能尊重你节奏、愿意接住你聊天频率的人，友谊会更轻松也更长久。"
-          : "保留自己的边界，同时把真实需求更早说出来，会让合适的人更快靠近你。"
+        assets.traitMeta,
+        assets.badgeText,
+        assets.footerText,
+        assets.highlightTitle,
+        assets.highlightBody,
+        assets.adviceTitle,
+        assets.adviceBody,
       );
     }
 

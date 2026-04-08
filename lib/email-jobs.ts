@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+﻿import { and, eq } from "drizzle-orm";
 import type { QuizMode } from "@/app/data/types";
 import {
   listChatEmailNotificationEvents,
@@ -12,8 +12,15 @@ import {
   sendMatchResultEmail,
 } from "@/lib/email";
 import { getMatchSchedule, isOptedOutForRound } from "@/lib/match-schedule";
-import { ensureMutualPairsForRound } from "@/lib/mutual-matching";
-import { getProfileRowsForMode } from "@/lib/profile-updates";
+import {
+  buildMutualRoundKey,
+  countMutualPairsForRound,
+  ensureMutualPairsForRound,
+} from "@/lib/mutual-matching";
+import {
+  listEligibleProfileRowsForRound,
+  syncProfileUpdateDraftsForAllModes,
+} from "@/lib/profile-updates";
 import {
   chatEmailReminderWindows,
   matchPairs,
@@ -31,6 +38,14 @@ type JobSummary = {
   failed: number;
   skipped: number;
   blocked: number;
+};
+
+type MatchPreparationSummary = {
+  mode: QuizMode;
+  releaseAt: number | null;
+  prepared: boolean;
+  pairCount: number;
+  skipped: boolean;
 };
 
 type WorkerState = {
@@ -276,9 +291,9 @@ export async function processAutomaticMatchReleaseEmails(
   }
 
   const db = getDbForMode(mode);
-  const profileRows = await getProfileRowsForMode(mode, now);
-  const roundKey = await ensureMutualPairsForRound(mode, profileRows, schedule.releaseAt, now);
-  const pairRows = await db
+  const eligibleProfileRows = await listEligibleProfileRowsForRound(mode, schedule.releaseAt, now);
+  const roundKey = buildMutualRoundKey(mode, schedule.releaseAt);
+  let pairRows = await db
     .select({
       user_a_id: matchPairs.user_a_id,
       user_b_id: matchPairs.user_b_id,
@@ -286,13 +301,24 @@ export async function processAutomaticMatchReleaseEmails(
     .from(matchPairs)
     .where(eq(matchPairs.round_key, roundKey));
 
+  if (!pairRows.length && eligibleProfileRows.length) {
+    await ensureMutualPairsForRound(mode, eligibleProfileRows, schedule.releaseAt, now);
+    pairRows = await db
+      .select({
+        user_a_id: matchPairs.user_a_id,
+        user_b_id: matchPairs.user_b_id,
+      })
+      .from(matchPairs)
+      .where(eq(matchPairs.round_key, roundKey));
+  }
+
   const matchCounts = new Map<number, number>();
   for (const pairRow of pairRows) {
     matchCounts.set(pairRow.user_a_id, (matchCounts.get(pairRow.user_a_id) ?? 0) + 1);
     matchCounts.set(pairRow.user_b_id, (matchCounts.get(pairRow.user_b_id) ?? 0) + 1);
   }
 
-  const candidates = profileRows.filter((row) => {
+  const candidates = eligibleProfileRows.filter((row) => {
     const userId = Number(row.id);
     const email = String(row.email ?? "").trim();
 
@@ -354,7 +380,35 @@ export async function processAutomaticMatchReleaseEmails(
   return summary;
 }
 
+export async function processMatchPairPrecomputation(
+  mode: QuizMode,
+  now: Date = new Date(),
+): Promise<MatchPreparationSummary> {
+  const schedule = getMatchSchedule(now);
+  const summary: MatchPreparationSummary = {
+    mode,
+    releaseAt: schedule.isInDisplayWindow ? schedule.releaseAt : null,
+    prepared: false,
+    pairCount: 0,
+    skipped: !schedule.isInDisplayWindow,
+  };
+
+  if (!schedule.isInDisplayWindow) {
+    return summary;
+  }
+
+  const eligibleProfileRows = await listEligibleProfileRowsForRound(mode, schedule.releaseAt, now);
+  await ensureMutualPairsForRound(mode, eligibleProfileRows, schedule.releaseAt, now);
+
+  summary.prepared = true;
+  summary.pairCount = await countMutualPairsForRound(mode, schedule.releaseAt);
+  return summary;
+}
+
 async function runChatEmailCycle() {
+  const now = new Date();
+  await syncProfileUpdateDraftsForAllModes(now);
+
   const summaries = await Promise.all([
     processPendingChatReminderEmails("romance"),
     processPendingChatReminderEmails("friendship"),
@@ -366,9 +420,21 @@ async function runChatEmailCycle() {
 }
 
 async function runMatchReleaseCycle() {
+  const now = new Date();
+  await syncProfileUpdateDraftsForAllModes(now);
+
+  const preparationSummaries = await Promise.all([
+    processMatchPairPrecomputation("romance", now),
+    processMatchPairPrecomputation("friendship", now),
+  ]);
+
+  if (preparationSummaries.some((summary) => summary.prepared)) {
+    console.info("match pair precomputation summary:", preparationSummaries);
+  }
+
   const summaries = await Promise.all([
-    processAutomaticMatchReleaseEmails("romance"),
-    processAutomaticMatchReleaseEmails("friendship"),
+    processAutomaticMatchReleaseEmails("romance", now),
+    processAutomaticMatchReleaseEmails("friendship", now),
   ]);
 
   if (summaries.some((summary) => summary.sent > 0 || summary.failed > 0)) {
@@ -436,3 +502,4 @@ export function ensureEmailBackgroundWorkersStarted() {
 
   console.info("DateMatch email background workers started");
 }
+

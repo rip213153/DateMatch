@@ -105,6 +105,42 @@ function getAnnouncementEditorSourceLabel(source: "default" | "published" | "dra
   }
 }
 
+function getInspectionModeTitle(mode: string) {
+  return mode === "friendship" ? "友情模式" : "恋爱模式";
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(Number(value || 0) * 100)}%`;
+}
+
+function getTraceBucketLabel(bucket: string) {
+  switch (bucket) {
+    case "profile":
+      return "画像";
+    case "complementary":
+      return "互补";
+    case "shared":
+      return "共同点";
+    case "context":
+      return "现实入口";
+    default:
+      return "兜底";
+  }
+}
+
+function getTraceEvidenceLabel(key: string) {
+  switch (key) {
+    case "personality":
+      return "性格支撑";
+    case "interests":
+      return "兴趣支撑";
+    case "background":
+      return "背景支撑";
+    default:
+      return "互补支撑";
+  }
+}
+
 function getBannerMessage(searchParams?: OpsPageProps["searchParams"]) {
   const error = readSearchParam(searchParams?.error);
   const saved = readSearchParam(searchParams?.saved);
@@ -519,6 +555,150 @@ export default async function OpsPage({ searchParams }: OpsPageProps) {
                     {modeStats.wechatBoundProfiles} / {modeStats.wechatNoticeOptInProfiles}
                   </p>
                 </div>
+              </CardContent>
+            </Card>
+          ))}
+        </section>
+
+        <section className="space-y-6">
+          {dashboard.inspections.map((inspection) => (
+            <Card key={inspection.mode}>
+              <CardHeader>
+                <CardTitle>{getInspectionModeTitle(inspection.mode)} · V2 样本巡检</CardTitle>
+                <CardDescription>
+                  当前轮次 {inspection.roundKey}，抽取 {inspection.sampleCount} 个真实用户视角样本，用来查看 opener /
+                  highlight / trace / 结果页末尾画像延伸是否一致。
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {inspection.samples.length === 0 ? (
+                  <div className="rounded-lg border border-dashed bg-white px-4 py-8 text-center text-sm text-neutral-500">
+                    当前轮次还没有可巡检的配对样本。
+                  </div>
+                ) : (
+                  inspection.samples.map((sample) => (
+                    <div key={sample.id} className="rounded-xl border bg-white p-4">
+                      <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant="secondary">{sample.perspective.profileTitle}</Badge>
+                            <Badge variant="outline">pair {formatPercent(sample.pairScore)}</Badge>
+                            <Badge variant="outline">overall {formatPercent(sample.overallScore)}</Badge>
+                          </div>
+                          <div className="text-sm leading-6 text-neutral-700">
+                            <span className="font-medium text-neutral-900">
+                              {sample.perspective.name} ({sample.perspective.age})
+                            </span>
+                            <span className="mx-2 text-neutral-400">→</span>
+                            <span className="font-medium text-neutral-900">
+                              {sample.target.name} ({sample.target.age})
+                            </span>
+                            <span className="ml-2 text-neutral-500">
+                              {sample.perspective.university} / {sample.target.university}
+                            </span>
+                          </div>
+                          <p className="text-xs text-neutral-500">
+                            目标画像：{sample.target.profileTitle}
+                          </p>
+                        </div>
+
+                        <div className="grid gap-2 text-xs text-neutral-600 sm:grid-cols-2 xl:min-w-[320px]">
+                          <div className="rounded-lg border bg-neutral-50 px-3 py-2">
+                            <p className="font-medium text-neutral-900">关系理解</p>
+                            <p className="mt-1">{formatPercent(sample.breakdown.personality)}</p>
+                          </div>
+                          <div className="rounded-lg border bg-neutral-50 px-3 py-2">
+                            <p className="font-medium text-neutral-900">话题入口</p>
+                            <p className="mt-1">{formatPercent(sample.breakdown.interests)}</p>
+                          </div>
+                          <div className="rounded-lg border bg-neutral-50 px-3 py-2">
+                            <p className="font-medium text-neutral-900">现实落点</p>
+                            <p className="mt-1">{formatPercent(sample.breakdown.background)}</p>
+                          </div>
+                          <div className="rounded-lg border bg-neutral-50 px-3 py-2">
+                            <p className="font-medium text-neutral-900">节奏互补</p>
+                            <p className="mt-1">{formatPercent(sample.breakdown.complementary)}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_1fr]">
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                              Highlights
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {sample.highlights.map((item) => (
+                                <Badge key={item} variant="secondary" className="rounded-full">
+                                  {item}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                              Openers
+                            </p>
+                            <div className="mt-2 space-y-2">
+                              {sample.iceBreakers.map((item) => (
+                                <div key={item} className="rounded-lg border bg-neutral-50 px-3 py-2 text-sm leading-6 text-neutral-700">
+                                  {item}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">
+                              Trace
+                            </p>
+                            <div className="mt-2 space-y-2">
+                              {sample.trace.map((item) => (
+                                <div key={`${sample.id}:${item.text}`} className="rounded-lg border bg-neutral-50 px-3 py-3 text-sm text-neutral-700">
+                                  <p className="font-medium text-neutral-900">{item.text}</p>
+                                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-500">
+                                    <span>{getTraceBucketLabel(item.bucket)}</span>
+                                    <span>·</span>
+                                    <span>{getTraceEvidenceLabel(item.evidenceKey)}</span>
+                                    <span>·</span>
+                                    <span>支撑 {formatPercent(item.evidenceScore)}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="rounded-lg border bg-emerald-50/60 px-3 py-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-emerald-700">
+                                结果页末尾卡片 · 更容易被吸引 / 留住
+                              </p>
+                              <ul className="mt-2 space-y-1 text-sm leading-6 text-neutral-700">
+                                {sample.bestMatches.map((item) => (
+                                  <li key={item}>• {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div className="rounded-lg border bg-rose-50/60 px-3 py-3">
+                              <p className="text-xs font-medium uppercase tracking-wide text-rose-700">
+                                结果页末尾卡片 · 更容易卡住 / 觉得费力
+                              </p>
+                              <ul className="mt-2 space-y-1 text-sm leading-6 text-neutral-700">
+                                {sample.challengingMatches.map((item) => (
+                                  <li key={item}>• {item}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </CardContent>
             </Card>
           ))}

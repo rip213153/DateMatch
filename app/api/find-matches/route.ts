@@ -1,21 +1,30 @@
-import { NextResponse } from "next/server";
 import type { UserProfile } from "@/app/data/types";
+import {
+  apiSuccess,
+  handleApiRouteError,
+  readJsonBody,
+  readPositiveInt,
+} from "@/lib/api-route";
 import { resolveQuizMode } from "@/lib/database";
+import {
+  getFindMatchesAuthContext,
+  postFindMatchesAuthContext,
+} from "@/lib/find-matches-route-core";
 import { getMatchSchedule, isOptedOutForRound } from "@/lib/match-schedule";
-import { ensureMutualPairsForRound, getMutualMatchesForUser } from "@/lib/mutual-matching";
-import { getProfileRowsForMode } from "@/lib/profile-updates";
+import {
+  buildMutualMatchesForUser,
+  getMutualPairRowsForUser,
+  getMutualTargetUserId,
+} from "@/lib/mutual-matching";
+import {
+  getProfileRowByIdForMode,
+  listProfileRowsByIdsForMode,
+  syncProfileUpdateDrafts,
+} from "@/lib/profile-updates";
 import { normalizeProfile } from "@/lib/profile-normalizer";
+import { requireAuthenticatedProfile } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
-
-function toPositiveInt(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isInteger(parsed) && parsed > 0) return parsed;
-  }
-  return null;
-}
 
 function buildCurrentUserPayload(user: Pick<UserProfile, "id" | "name">) {
   return {
@@ -55,8 +64,8 @@ function isEligibleForRelease(value: unknown, releaseAt: number) {
 }
 
 async function findMatchesByUserId(userId: number, mode: "romance" | "friendship", now: Date) {
-  const rows = await getProfileRowsForMode(mode, now);
-  const currentUserRow = rows.find((user) => Number(user.id) === userId);
+  await syncProfileUpdateDrafts(mode, now);
+  const currentUserRow = await getProfileRowByIdForMode(mode, userId);
   const schedule = getMatchSchedule(now);
 
   if (!currentUserRow) {
@@ -64,15 +73,14 @@ async function findMatchesByUserId(userId: number, mode: "romance" | "friendship
   }
 
   const currentUser = normalizeProfile(currentUserRow);
-  const isEligibleForCurrentRound = isEligibleForRelease(
-    currentUserRow.eligible_release_at,
-    schedule.releaseAt
-  );
+  const isEligibleForCurrentRound = isEligibleForRelease(currentUserRow.eligible_release_at, schedule.releaseAt);
   const shouldLoadMutualMatches = schedule.isInDisplayWindow && isEligibleForCurrentRound;
   const matches = shouldLoadMutualMatches
     ? await (async () => {
-        const roundKey = await ensureMutualPairsForRound(mode, rows, schedule.releaseAt, now);
-        return getMutualMatchesForUser(userId, mode, rows, roundKey);
+        const pairRows = await getMutualPairRowsForUser(userId, mode, schedule.releaseAt);
+        const targetUserIds = pairRows.map((pairRow) => getMutualTargetUserId(pairRow, userId));
+        const targetProfileRows = await listProfileRowsByIdsForMode(mode, targetUserIds);
+        return buildMutualMatchesForUser(userId, mode, currentUserRow, targetProfileRows, pairRows);
       })()
     : [];
 
@@ -94,15 +102,9 @@ function buildClosedResponse(
   mode: string,
   overrides?: Partial<ReturnType<typeof buildSchedulePayload>> & {
     isQueuedForNextRound?: boolean;
-  }
+  },
 ) {
-  const schedulePayload = {
-    ...buildSchedulePayload(now),
-    ...overrides,
-  };
-
-  return NextResponse.json({
-    success: true,
+  return apiSuccess({
     mode,
     matches: [],
     totalMatches: 0,
@@ -111,17 +113,17 @@ function buildClosedResponse(
     isOptedOutForRound: result.isOptedOutForRound,
     isQueuedForNextRound: Boolean(overrides?.isQueuedForNextRound),
     eligibleReleaseAt: result.eligibleReleaseAt,
-    ...schedulePayload,
+    ...buildSchedulePayload(now),
+    ...(overrides ?? {}),
   });
 }
 
-async function buildOpenResponse(
+function buildOpenResponse(
   result: NonNullable<Awaited<ReturnType<typeof findMatchesByUserId>>>,
   now: Date,
-  mode: "romance" | "friendship"
+  mode: "romance" | "friendship",
 ) {
-  return NextResponse.json({
-    success: true,
+  return apiSuccess({
     mode,
     matches: result.matches,
     totalMatches: result.matches.length,
@@ -138,7 +140,7 @@ async function handleRequest(userId: number, mode: "romance" | "friendship", now
   const result = await findMatchesByUserId(userId, mode, now);
 
   if (!result) {
-    return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+    return Response.json({ error: "User not found" }, { status: 404 });
   }
 
   const schedule = getMatchSchedule(now);
@@ -160,34 +162,37 @@ async function handleRequest(userId: number, mode: "romance" | "friendship", now
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = toPositiveInt(searchParams.get("userId"));
-    const mode = resolveQuizMode(searchParams.get("mode"));
+    const { mode, authenticatedProfile: profile } = await getFindMatchesAuthContext(request, {
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
 
-    if (!userId) {
-      return NextResponse.json({ error: "缺少合法的 userId 参数" }, { status: 400 });
-    }
-
-    return handleRequest(userId, mode, new Date());
+    return handleRequest(Number(profile.id), mode, new Date());
   } catch (error) {
-    console.error("Error finding matches:", error);
-    return NextResponse.json({ error: "匹配失败，请重试" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "Failed to fetch matches",
+      code: "FETCH_MATCHES_FAILED",
+      logMessage: "Error finding matches:",
+    });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const data = await request.json();
-    const userId = toPositiveInt(data.userId);
-    const mode = resolveQuizMode(data?.mode);
+    const { mode, authenticatedProfile: profile } = await postFindMatchesAuthContext(request, {
+      readJsonBody,
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
 
-    if (!userId) {
-      return NextResponse.json({ error: "缺少合法的用户 ID" }, { status: 400 });
-    }
-
-    return handleRequest(userId, mode, new Date());
+    return handleRequest(Number(profile.id), mode, new Date());
   } catch (error) {
-    console.error("Error finding matches:", error);
-    return NextResponse.json({ error: "匹配失败，请重试" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "Failed to fetch matches",
+      code: "FETCH_MATCHES_FAILED",
+      logMessage: "Error finding matches:",
+    });
   }
 }

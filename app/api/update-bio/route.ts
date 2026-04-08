@@ -1,22 +1,35 @@
-import { eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
+﻿import { eq } from "drizzle-orm";
+import {
+  apiSuccess,
+  handleApiRouteError,
+  readJsonBody,
+  readPositiveInt,
+  readTrimmedString,
+} from "@/lib/api-route";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { profiles } from "@/lib/schema";
+import { requireAuthenticatedProfile } from "@/lib/server-auth";
+import { postUpdateProfileFieldAuthContext } from "@/lib/update-profile-field-route-core";
 
 export async function POST(request: Request) {
   try {
-    const { userId, newBio, mode } = await request.json();
-    const db = getDbForMode(resolveQuizMode(mode));
+    const { body, mode, authenticatedProfile: profile } = await postUpdateProfileFieldAuthContext(request, {
+      readJsonBody,
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
+    const newBio = readTrimmedString(body.newBio);
 
-    if (!userId || newBio === undefined) {
-      return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
-    }
+    const db = getDbForMode(mode);
+    await db.update(profiles).set({ bio: newBio }).where(eq(profiles.id, Number(profile.id)));
 
-    await db.update(profiles).set({ bio: newBio }).where(eq(profiles.id, userId)).run();
-
-    return NextResponse.json({ success: true, message: "自我介绍已更新" });
+    return apiSuccess({ message: "鑷垜浠嬬粛宸叉洿鏂?" });
   } catch (error) {
-    console.error("Error updating bio:", error);
-    return NextResponse.json({ error: "更新失败" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "鏇存柊澶辫触",
+      code: "UPDATE_BIO_FAILED",
+      logMessage: "Error updating bio:",
+    });
   }
 }

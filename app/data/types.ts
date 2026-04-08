@@ -24,6 +24,28 @@ export interface FriendshipTraits {
   openness: number;
 }
 
+export interface RomanceTraitsV2 {
+  approachPace: number;
+  reassuranceNeed: number;
+  boundaryAutonomy: number;
+  emotionalExpression: number;
+  conflictEngagement: number;
+  futureOrientation: number;
+  jealousyRegulation: number;
+  stabilityPreference: number;
+}
+
+export interface FriendshipTraitsV2 {
+  connectionFrequency: number;
+  emotionalHolding: number;
+  boundaryClarity: number;
+  repairInitiative: number;
+  dependability: number;
+  differenceOpenness: number;
+  comparisonTolerance: number;
+  lowPressureCompanionship: number;
+}
+
 export type RomanceQuestionCategory =
   | "social"
   | "dating"
@@ -44,6 +66,26 @@ export type FriendshipQuestionCategory =
   | "values"
   | "comfort"
   | "lifestyle";
+
+export type RomanceQuestionCategoryV2 =
+  | "initiation"
+  | "security"
+  | "autonomy"
+  | "expression"
+  | "conflict"
+  | "future"
+  | "regulation"
+  | "stability";
+
+export type FriendshipQuestionCategoryV2 =
+  | "frequency"
+  | "support"
+  | "boundaries"
+  | "repair"
+  | "dependability"
+  | "difference"
+  | "comparison"
+  | "low_pressure";
 
 export interface QuizAnswer<TTraits extends object = PersonalityTraits> {
   text: string;
@@ -66,6 +108,10 @@ export type Answer = QuizAnswer<PersonalityTraits>;
 export type Question = QuizQuestion<PersonalityTraits, RomanceQuestionCategory>;
 export type FriendshipAnswer = QuizAnswer<FriendshipTraits>;
 export type FriendshipQuestion = QuizQuestion<FriendshipTraits, FriendshipQuestionCategory>;
+export type RomanceAnswerV2 = QuizAnswer<RomanceTraitsV2>;
+export type RomanceQuestionV2 = QuizQuestion<RomanceTraitsV2, RomanceQuestionCategoryV2>;
+export type FriendshipAnswerV2 = QuizAnswer<FriendshipTraitsV2>;
+export type FriendshipQuestionV2 = QuizQuestion<FriendshipTraitsV2, FriendshipQuestionCategoryV2>;
 
 export interface UserProfile {
   id: number | string;
@@ -84,7 +130,12 @@ export interface UserProfile {
   ideal_date: string;
   ideal_date_tags?: string[];
   bio?: string;
-  personality_profile?: PersonalityTraits | FriendshipTraits | string;
+  personality_profile?:
+    | PersonalityTraits
+    | FriendshipTraits
+    | RomanceTraitsV2
+    | FriendshipTraitsV2
+    | string;
   matching_status?: "WAITING" | "MATCHED" | "VIEWED";
   match_at?: string | number | Date | null;
   eligible_release_at?: string | number | Date | null;

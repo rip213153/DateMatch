@@ -1,31 +1,24 @@
 import { and, desc, ne, sql } from "drizzle-orm";
-import { NextResponse } from "next/server";
 import { normalizeIdealPreferenceTags } from "@/app/data/idealPreferenceTags";
+import {
+  apiSuccess,
+  handleApiRouteError,
+  readJsonBody,
+  readPositiveInt,
+} from "@/lib/api-route";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
-import { INTEREST_TAG_LIMIT, normalizeInterestValues, parseInterestValues } from "@/lib/interest-tags";
+import { INTEREST_TAG_LIMIT, parseInterestValues } from "@/lib/interest-tags";
 import {
   getProfileWithPendingDraft,
   normalizeProfileFormPayload,
   saveProfileUpdates,
+  syncProfileUpdateDrafts,
 } from "@/lib/profile-updates";
+import { getProfileRouteAuthContext, postProfileRouteAuthContext } from "@/lib/profile-route-core";
+import { requireAuthenticatedProfile, setSessionCookie } from "@/lib/server-auth";
 import { profiles } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
-
-function toPositiveInt(value: unknown) {
-  if (typeof value === "number" && Number.isInteger(value) && value > 0) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isInteger(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-
-  return null;
-}
 
 function toResponseProfile(profile: typeof profiles.$inferSelect) {
   return {
@@ -36,7 +29,12 @@ function toResponseProfile(profile: typeof profiles.$inferSelect) {
     seeking: profile.seeking,
     university: profile.university,
     email: profile.email,
-    interests: normalizeInterestValues(profile.interests),
+    interests:
+      typeof profile.interests === "string"
+        ? profile.interests.split(",").map((item) => item.trim()).filter(Boolean)
+        : Array.isArray(profile.interests)
+          ? profile.interests
+          : [],
     idealDate: profile.ideal_date,
     idealDateTags: normalizeIdealPreferenceTags(profile.ideal_date_tags),
     bio: profile.bio ?? "",
@@ -46,21 +44,19 @@ function toResponseProfile(profile: typeof profiles.$inferSelect) {
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = toPositiveInt(searchParams.get("userId"));
-    const mode = resolveQuizMode(searchParams.get("mode"));
+    const { mode, authenticatedProfile } = await getProfileRouteAuthContext(request, {
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
 
-    if (!userId) {
-      return NextResponse.json({ error: "Missing valid userId" }, { status: 400 });
-    }
-
-    const result = await getProfileWithPendingDraft(userId, mode);
+    await syncProfileUpdateDrafts(mode);
+    const result = await getProfileWithPendingDraft(Number(authenticatedProfile.id), mode);
     if (!result) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+      return Response.json({ error: "Profile not found" }, { status: 404 });
     }
 
-    return NextResponse.json({
-      success: true,
+    return apiSuccess({
       mode,
       profile: toResponseProfile(result.profile),
       previewProfile: toResponseProfile(result.previewProfile),
@@ -73,23 +69,26 @@ export async function GET(request: Request) {
         : null,
     });
   } catch (error) {
-    console.error("Error fetching profile:", error);
-    return NextResponse.json({ error: "Failed to fetch profile" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "Failed to fetch profile",
+      code: "FETCH_PROFILE_FAILED",
+      logMessage: "Error fetching profile:",
+    });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const data = await request.json();
-    const userId = toPositiveInt(data?.userId);
-    const mode = resolveQuizMode(data?.mode);
-
-    if (!userId) {
-      return NextResponse.json({ error: "Missing valid userId" }, { status: 400 });
-    }
+    const { data, mode, authenticatedProfile } = await postProfileRouteAuthContext(request, {
+      readJsonBody,
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
+    const userId = Number(authenticatedProfile.id);
 
     const interestValues = parseInterestValues(data?.interests);
-    const payload = normalizeProfileFormPayload(data ?? {});
+    const payload = normalizeProfileFormPayload(data);
     const hasRequiredFields =
       payload.name &&
       Number.isInteger(payload.age) &&
@@ -102,16 +101,16 @@ export async function POST(request: Request) {
       (payload.ideal_date || payload.ideal_date_tags !== "[]");
 
     if (interestValues.length > INTEREST_TAG_LIMIT) {
-      return NextResponse.json(
+      return Response.json(
         {
-          error: `\u5174\u8da3\u7231\u597d\u6700\u591a\u53ea\u80fd\u9009\u62e9 ${INTEREST_TAG_LIMIT} \u4e2a\u6807\u7b7e\u3002`,
+          error: `兴趣爱好最多只能选择 ${INTEREST_TAG_LIMIT} 个标签。`,
         },
         { status: 400 },
       );
     }
 
     if (!hasRequiredFields) {
-      return NextResponse.json({ error: "Invalid profile payload" }, { status: 400 });
+      return Response.json({ error: "Invalid profile payload" }, { status: 400 });
     }
 
     const db = getDbForMode(mode);
@@ -123,13 +122,12 @@ export async function POST(request: Request) {
       .limit(1);
 
     if (duplicateEmail.length > 0) {
-      return NextResponse.json({ error: "邮箱已被其他用户使用" }, { status: 409 });
+      return Response.json({ error: "邮箱已被其他用户使用" }, { status: 409 });
     }
 
     const result = await saveProfileUpdates(userId, mode, payload);
 
-    return NextResponse.json({
-      success: true,
+    const response = apiSuccess({
       mode,
       profile: toResponseProfile(result.profile),
       previewProfile: toResponseProfile(result.previewProfile),
@@ -145,12 +143,21 @@ export async function POST(request: Request) {
       changedDeferredFields: result.changedDeferredFields,
       deferredToNextRound: result.deferredToNextRound,
     });
-  } catch (error) {
-    if (error instanceof Error && error.message === "PROFILE_NOT_FOUND") {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+
+    if (result.profile.email) {
+      setSessionCookie(response, result.profile.email, mode);
     }
 
-    console.error("Error updating profile:", error);
-    return NextResponse.json({ error: "Failed to update profile" }, { status: 500 });
+    return response;
+  } catch (error) {
+    if (error instanceof Error && error.message === "PROFILE_NOT_FOUND") {
+      return Response.json({ error: "Profile not found" }, { status: 404 });
+    }
+
+    return handleApiRouteError(error, {
+      message: "Failed to update profile",
+      code: "UPDATE_PROFILE_FAILED",
+      logMessage: "Error updating profile:",
+    });
   }
 }

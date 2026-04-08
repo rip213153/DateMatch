@@ -1,13 +1,17 @@
-import { and, asc, desc, eq, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, or, sql } from "drizzle-orm";
 import type { QuizMode, UserProfile } from "@/app/data/types";
 import { getDbForMode } from "@/lib/database";
 import { getBestFriendshipMatches } from "@/lib/friendship-matching";
+import {
+  buildMatchPairKey,
+  getMatchRepeatWindowStart,
+  isMatchPairCoolingDown,
+} from "@/lib/match-repeat-policy";
 import { getBestMatches } from "@/lib/matching";
-import { isOptedOutForRound } from "@/lib/match-schedule";
 import { normalizeProfile, normalizeProfiles } from "@/lib/profile-normalizer";
 import { matchPairs, profiles } from "@/lib/schema";
 
-const MUTUAL_MATCH_LIMIT = 5;
+export const MUTUAL_MATCH_LIMIT = 3;
 
 type ProfileRow = typeof profiles.$inferSelect;
 
@@ -29,27 +33,11 @@ type RankedMatch = {
 type MutualPairRow = typeof matchPairs.$inferSelect;
 type MutualPairInsert = typeof matchPairs.$inferInsert;
 
-function toTimestamp(value: unknown): number | null {
-  if (!value) return null;
-  if (value instanceof Date) return value.getTime();
-  if (typeof value === "number") return Number.isFinite(value) ? value : null;
-
-  const date = new Date(String(value));
-  const timestamp = date.getTime();
-  return Number.isFinite(timestamp) ? timestamp : null;
-}
-
-function isEligibleForRelease(value: unknown, releaseAt: number) {
-  const timestamp = toTimestamp(value);
-  if (timestamp === null) return true;
-  return timestamp <= releaseAt;
-}
-
 function getRankedMatches(
   mode: QuizMode,
   currentUser: UserProfile,
   pool: UserProfile[],
-  limit: number = MUTUAL_MATCH_LIMIT
+  limit: number = MUTUAL_MATCH_LIMIT,
 ): RankedMatch[] {
   return mode === "friendship"
     ? getBestFriendshipMatches(currentUser, pool, limit)
@@ -83,38 +71,61 @@ export function buildMutualRoundKey(mode: QuizMode, releaseAt: number) {
   return `${mode}:${releaseAt}`;
 }
 
-export async function ensureMutualPairsForRound(
-  mode: QuizMode,
-  profileRows: ProfileRow[],
-  releaseAt: number,
-  now: Date = new Date()
-) {
+export async function countMutualPairsForRound(mode: QuizMode, releaseAt: number) {
   const db = getDbForMode(mode);
   const roundKey = buildMutualRoundKey(mode, releaseAt);
-
   const countRows = await db
     .select({ count: sql<number>`count(*)` })
     .from(matchPairs)
     .where(eq(matchPairs.round_key, roundKey));
 
-  const existingCount = Number(countRows[0]?.count ?? 0);
-  if (existingCount > 0) {
+  return Number(countRows[0]?.count ?? 0);
+}
+
+export async function hasPreparedMutualPairsForRound(mode: QuizMode, releaseAt: number) {
+  return (await countMutualPairsForRound(mode, releaseAt)) > 0;
+}
+
+async function listCoolingDownPairKeys(mode: QuizMode, now: Date = new Date()) {
+  const db = getDbForMode(mode);
+  const rows = await db
+    .select({
+      user_a_id: matchPairs.user_a_id,
+      user_b_id: matchPairs.user_b_id,
+    })
+    .from(matchPairs)
+    .where(
+      and(
+        eq(matchPairs.mode, mode),
+        gte(matchPairs.created_at, getMatchRepeatWindowStart(now)),
+      ),
+    );
+
+  return new Set(rows.map((row) => buildMatchPairKey(row.user_a_id, row.user_b_id)));
+}
+
+export async function prepareMutualPairsForRound(
+  mode: QuizMode,
+  eligibleProfileRows: ProfileRow[],
+  releaseAt: number,
+  now: Date = new Date(),
+) {
+  const roundKey = buildMutualRoundKey(mode, releaseAt);
+  if (await hasPreparedMutualPairsForRound(mode, releaseAt)) {
     return roundKey;
   }
 
-  const eligibleUsers = normalizeProfiles(
-    profileRows.filter(
-      (row) =>
-        !isOptedOutForRound(row.match_opt_out_until, now) &&
-        isEligibleForRelease(row.eligible_release_at, releaseAt)
-    )
-  );
-
+  const db = getDbForMode(mode);
+  const eligibleUsers = normalizeProfiles(eligibleProfileRows);
+  const coolingDownPairKeys = await listCoolingDownPairKeys(mode, now);
   const rankingsByUserId = new Map<number, Map<number, { rank: number; overallScore: number }>>();
 
   for (const user of eligibleUsers) {
     const userId = Number(user.id);
-    const pool = eligibleUsers.filter((candidate) => Number(candidate.id) !== userId);
+    const pool = eligibleUsers.filter((candidate) => {
+      const candidateId = Number(candidate.id);
+      return candidateId !== userId && !isMatchPairCoolingDown(userId, candidateId, coolingDownPairKeys);
+    });
     const rankedMatches = getRankedMatches(mode, user, pool, MUTUAL_MATCH_LIMIT);
     const rankMap = new Map<number, { rank: number; overallScore: number }>();
 
@@ -158,7 +169,7 @@ export async function ensureMutualPairsForRound(
         user_a_rank: userARank,
         user_b_rank: userBRank,
         pair_score: Number(pairScore.toFixed(4)),
-        created_at: new Date(),
+        created_at: now,
       });
     }
   }
@@ -170,32 +181,48 @@ export async function ensureMutualPairsForRound(
   return roundKey;
 }
 
-export async function getMutualMatchesForUser(
+export const ensureMutualPairsForRound = prepareMutualPairsForRound;
+
+export async function getMutualPairRowsForUser(
   userId: number,
   mode: QuizMode,
-  profileRows: ProfileRow[],
-  roundKey: string
+  releaseAt: number,
 ) {
   const db = getDbForMode(mode);
-  const currentUserRow = profileRows.find((row) => Number(row.id) === userId);
+  const roundKey = buildMutualRoundKey(mode, releaseAt);
 
-  if (!currentUserRow) {
-    return [] as RankedMatch[];
-  }
-
-  const currentUser = normalizeProfile(currentUserRow);
-  const usersById = new Map(profileRows.map((row) => [Number(row.id), normalizeProfile(row)]));
-
-  const pairRows = await db
+  return db
     .select()
     .from(matchPairs)
     .where(
       and(
         eq(matchPairs.round_key, roundKey),
-        or(eq(matchPairs.user_a_id, userId), eq(matchPairs.user_b_id, userId))
-      )
+        or(eq(matchPairs.user_a_id, userId), eq(matchPairs.user_b_id, userId)),
+      ),
     )
     .orderBy(desc(matchPairs.pair_score), asc(matchPairs.id));
+}
+
+export async function getMutualMatchesForUser(
+  userId: number,
+  mode: QuizMode,
+  currentUserRow: ProfileRow,
+  targetProfileRows: ProfileRow[],
+  releaseAt: number,
+) {
+  const pairRows = await getMutualPairRowsForUser(userId, mode, releaseAt);
+  return buildMutualMatchesForUser(userId, mode, currentUserRow, targetProfileRows, pairRows);
+}
+
+export function buildMutualMatchesForUser(
+  userId: number,
+  mode: QuizMode,
+  currentUserRow: ProfileRow,
+  targetProfileRows: ProfileRow[],
+  pairRows: MutualPairRow[],
+) {
+  const currentUser = normalizeProfile(currentUserRow);
+  const usersById = new Map(targetProfileRows.map((row) => [Number(row.id), normalizeProfile(row)]));
 
   return pairRows
     .map((pairRow) => {
@@ -212,28 +239,6 @@ export async function getMutualMatchesForUser(
       return buildFallbackMatch(targetUser, Number(pairRow.base_score ?? 0));
     })
     .filter((item): item is RankedMatch => item !== null);
-}
-
-export async function getMutualPairRowsForUser(
-  userId: number,
-  mode: QuizMode,
-  profileRows: ProfileRow[],
-  releaseAt: number,
-  now: Date = new Date()
-) {
-  const db = getDbForMode(mode);
-  const roundKey = await ensureMutualPairsForRound(mode, profileRows, releaseAt, now);
-
-  return db
-    .select()
-    .from(matchPairs)
-    .where(
-      and(
-        eq(matchPairs.round_key, roundKey),
-        or(eq(matchPairs.user_a_id, userId), eq(matchPairs.user_b_id, userId))
-      )
-    )
-    .orderBy(desc(matchPairs.pair_score), asc(matchPairs.id));
 }
 
 export function getMutualTargetUserId(pairRow: MutualPairRow, userId: number) {
@@ -266,24 +271,20 @@ export async function hasMutualPairForUsers(
   userId: number,
   targetUserId: number,
   mode: QuizMode,
-  profileRows: ProfileRow[],
   releaseAt: number,
-  now: Date = new Date()
 ) {
-  const pairRows = await getMutualPairRowsForUser(userId, mode, profileRows, releaseAt, now);
-  return pairRows.some((pairRow) => getMutualTargetUserId(pairRow, userId) === targetUserId);
+  const pairRow = await getMutualPairRowForUsers(userId, targetUserId, mode, releaseAt);
+  return Boolean(pairRow);
 }
 
 export async function getMutualPairRowForUsers(
   userId: number,
   targetUserId: number,
   mode: QuizMode,
-  profileRows: ProfileRow[],
   releaseAt: number,
-  now: Date = new Date()
 ) {
   const db = getDbForMode(mode);
-  const roundKey = await ensureMutualPairsForRound(mode, profileRows, releaseAt, now);
+  const roundKey = buildMutualRoundKey(mode, releaseAt);
   const { userAId, userBId } = buildMutualPairKey(userId, targetUserId);
   const rows = await db
     .select()
@@ -292,8 +293,8 @@ export async function getMutualPairRowForUsers(
       and(
         eq(matchPairs.round_key, roundKey),
         eq(matchPairs.user_a_id, userAId),
-        eq(matchPairs.user_b_id, userBId)
-      )
+        eq(matchPairs.user_b_id, userBId),
+      ),
     )
     .orderBy(desc(matchPairs.id));
 
@@ -304,7 +305,7 @@ export function buildMutualPairConfirmationPatch(
   userId: number,
   targetUserId: number,
   confirmed: boolean,
-  confirmedAt: Date
+  confirmedAt: Date,
 ): Pick<MutualPairInsert, "user_a_confirmed_at" | "user_b_confirmed_at"> {
   const { userAId } = buildMutualPairKey(userId, targetUserId);
 

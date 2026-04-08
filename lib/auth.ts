@@ -8,6 +8,10 @@ export type AuthMode = "romance" | "friendship";
 
 export type AuthCheckResult = {
   isAuthenticated: boolean;
+  email?: string;
+  mode?: AuthMode;
+  userId?: number | null;
+  expiresAt?: number | null;
 };
 
 export type AuthLoginResult = {
@@ -17,6 +21,10 @@ export type AuthLoginResult = {
 
 function hasWindow() {
   return typeof window !== "undefined";
+}
+
+function buildEmailIdentity(email: string, mode: AuthMode) {
+  return `email:${mode}:${email.trim().toLowerCase()}`;
 }
 
 function clearAuthStorage() {
@@ -40,6 +48,19 @@ function saveAuthSession(identity: string, ttlMs: number = DEFAULT_TTL_MS, userI
   } else {
     localStorage.removeItem(AUTH_USER_ID_KEY);
   }
+}
+
+function syncEmailSession(email: string, mode: AuthMode, expiresAtSeconds?: number | null, userId?: number | null) {
+  const ttlMs =
+    typeof expiresAtSeconds === "number" && Number.isFinite(expiresAtSeconds)
+      ? Math.max(0, expiresAtSeconds * 1000 - Date.now())
+      : DEFAULT_TTL_MS;
+
+  saveAuthSession(
+    buildEmailIdentity(email, mode),
+    ttlMs || DEFAULT_TTL_MS,
+    Number.isInteger(userId) && Number(userId) > 0 ? Number(userId) : undefined,
+  );
 }
 
 function hasValidStoredSession() {
@@ -71,7 +92,40 @@ function readStoredMode(): AuthMode | null {
 
 export class AuthService {
   static async checkAuth(): Promise<AuthCheckResult> {
-    return { isAuthenticated: hasValidStoredSession() };
+    try {
+      const response = await fetch("/api/auth/session", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || !data?.isAuthenticated || !data?.email || !data?.mode) {
+        clearAuthStorage();
+        return { isAuthenticated: false };
+      }
+
+      const mode = data.mode === "friendship" ? "friendship" : "romance";
+      const userId = Number(data.userId);
+      const expiresAt = Number(data.expiresAt);
+
+      syncEmailSession(
+        String(data.email),
+        mode,
+        Number.isFinite(expiresAt) ? expiresAt : null,
+        Number.isInteger(userId) && userId > 0 ? userId : null,
+      );
+
+      return {
+        isAuthenticated: true,
+        email: String(data.email),
+        mode,
+        userId: Number.isInteger(userId) && userId > 0 ? userId : null,
+        expiresAt: Number.isFinite(expiresAt) ? expiresAt : null,
+      };
+    } catch {
+      return { isAuthenticated: hasValidStoredSession() };
+    }
   }
 
   static async loginWithCode(rawCode: string): Promise<AuthLoginResult> {
@@ -90,7 +144,7 @@ export class AuthService {
       return { success: false, message: "邮箱不能为空" };
     }
 
-    saveAuthSession(`email:${mode}:${email}`, DEFAULT_TTL_MS, userId);
+    saveAuthSession(buildEmailIdentity(email, mode), DEFAULT_TTL_MS, userId);
     return { success: true };
   }
 
@@ -117,10 +171,10 @@ export class AuthService {
 
   static async logout() {
     try {
-      await fetch("/api/auth/logout", { 
-        method: "POST", 
+      await fetch("/api/auth/logout", {
+        method: "POST",
         credentials: "include",
-        cache: "no-store"
+        cache: "no-store",
       });
     } catch {
       // noop

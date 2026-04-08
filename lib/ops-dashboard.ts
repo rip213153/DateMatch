@@ -1,7 +1,13 @@
-﻿import { gte, eq, sql } from "drizzle-orm";
+﻿import { desc, eq, gte, sql } from "drizzle-orm";
 import { readFile } from "fs/promises";
 import path from "path";
+import {
+  FRIENDSHIP_PROFILE_COMPATIBILITY_V2,
+  ROMANCE_PROFILE_COMPATIBILITY_V2,
+  resolveV2ProfileCopy,
+} from "@/app/data/resultsContent";
 import type { QuizMode } from "@/app/data/types";
+import type { MatchItem, UserSummary } from "@/components/match/types";
 import {
   HOME_ANNOUNCEMENT_DEFAULT_PATH,
   HOME_ANNOUNCEMENT_DRAFT_PATH,
@@ -10,8 +16,12 @@ import {
   getResolvedHomeAnnouncement,
 } from "@/lib/home-announcement-store";
 import { getDbForMode } from "@/lib/database";
+import { getBestFriendshipMatches } from "@/lib/friendship-matching";
+import { generateIceBreakers, getHighlightDebugTrace, getHighlights, type HighlightDebugTraceItem } from "@/lib/match-helpers";
 import { buildMutualRoundKey } from "@/lib/mutual-matching";
+import { getBestMatches } from "@/lib/matching";
 import { DISPLAY_DAYS, MATCH_DAY, MATCH_HOUR, MATCH_MINUTE, getMatchSchedule, isOptedOutForRound } from "@/lib/match-schedule";
+import { normalizeProfile } from "@/lib/profile-normalizer";
 import { chatMessages, chatNotificationEvents, matchPairs, profileUpdateDrafts, profiles } from "@/lib/schema";
 import {
   filterOpsFeedbackItems,
@@ -61,6 +71,45 @@ export type OpsAlert = {
   message: string;
 };
 
+export type OpsInspectionSample = {
+  id: string;
+  mode: QuizMode;
+  pairScore: number;
+  perspective: {
+    id: number;
+    name: string;
+    age: number;
+    university: string;
+    profileTitle: string;
+  };
+  target: {
+    id: number;
+    name: string;
+    age: number;
+    university: string;
+    profileTitle: string;
+  };
+  overallScore: number;
+  breakdown: {
+    personality: number;
+    interests: number;
+    background: number;
+    complementary: number;
+  };
+  highlights: string[];
+  iceBreakers: string[];
+  trace: HighlightDebugTraceItem[];
+  bestMatches: string[];
+  challengingMatches: string[];
+};
+
+export type OpsInspectionModeData = {
+  mode: QuizMode;
+  roundKey: string;
+  sampleCount: number;
+  samples: OpsInspectionSample[];
+};
+
 export type OpsDashboardData = {
   generatedAt: string;
   overview: {
@@ -106,6 +155,7 @@ export type OpsDashboardData = {
     filePath: string;
   };
   modes: OpsModeStats[];
+  inspections: OpsInspectionModeData[];
 };
 
 function toTimestamp(value: unknown): number | null {
@@ -132,6 +182,112 @@ function getFeedbackStatusRank(status: FeedbackLogStatus) {
     default:
       return 1;
   }
+}
+
+function parseNumericProfile(value: unknown): Record<string, number> {
+  const raw =
+    typeof value === "string"
+      ? (() => {
+          try {
+            return JSON.parse(value) as Record<string, unknown>;
+          } catch {
+            return {};
+          }
+        })()
+      : value && typeof value === "object"
+        ? (value as Record<string, unknown>)
+        : {};
+
+  return Object.entries(raw).reduce<Record<string, number>>((acc, [key, item]) => {
+    const numeric = Number(item);
+    if (Number.isFinite(numeric)) {
+      acc[key] = numeric;
+    }
+    return acc;
+  }, {});
+}
+
+function toUserSummary(user: ReturnType<typeof normalizeProfile>): UserSummary {
+  return {
+    id: Number(user.id),
+    name: user.name,
+    age: user.age,
+    university: user.university,
+    email: user.email,
+    gender: user.gender,
+    seeking: user.seeking,
+    ideal_date: user.ideal_date,
+    ideal_date_tags: user.ideal_date_tags,
+    bio: user.bio,
+    interests: user.interests,
+    personality_profile: user.personality_profile as UserSummary["personality_profile"],
+    match_opt_out_until: user.match_opt_out_until,
+  };
+}
+
+function toMatchItem(
+  user: ReturnType<typeof normalizeProfile>,
+  rankedMatch: {
+    match: {
+      overallScore: number;
+      breakdown: {
+        personality: number;
+        interests: number;
+        background: number;
+        complementary: number;
+      };
+      matches: string[];
+      recommendations: string[];
+    };
+  },
+): MatchItem {
+  return {
+    user: {
+      id: Number(user.id),
+      name: user.name,
+      age: user.age,
+      university: user.university,
+      email: user.email,
+      ideal_date: user.ideal_date,
+      ideal_date_tags: user.ideal_date_tags,
+      bio: user.bio,
+      interests: user.interests,
+      personality_profile: user.personality_profile as MatchItem["user"]["personality_profile"],
+    },
+    match: rankedMatch.match,
+  };
+}
+
+function pickInspectionPairRows<T>(rows: T[], limit: number): T[] {
+  if (rows.length <= limit) {
+    return rows;
+  }
+
+  const indices = new Set<number>([
+    0,
+    Math.min(1, rows.length - 1),
+    Math.floor(rows.length / 2),
+    rows.length - 1,
+  ]);
+
+  return Array.from(indices)
+    .filter((index) => index >= 0 && index < rows.length)
+    .sort((left, right) => left - right)
+    .map((index) => rows[index])
+    .filter((item): item is T => Boolean(item))
+    .slice(0, limit);
+}
+
+function getCompatibilityForProfile(mode: QuizMode, profileId: string) {
+  const map =
+    mode === "friendship" ? FRIENDSHIP_PROFILE_COMPATIBILITY_V2 : ROMANCE_PROFILE_COMPATIBILITY_V2;
+
+  return (
+    map[profileId] ?? {
+      bestMatches: [],
+      challengingMatches: [],
+    }
+  );
 }
 
 
@@ -322,14 +478,106 @@ async function getModeStats(mode: QuizMode, now: Date, releaseAt: number): Promi
   };
 }
 
+async function getInspectionDataForMode(
+  mode: QuizMode,
+  releaseAt: number,
+  pairLimit: number = 4,
+): Promise<OpsInspectionModeData> {
+  const db = getDbForMode(mode);
+  const roundKey = buildMutualRoundKey(mode, releaseAt);
+  const pairRows = await db
+    .select()
+    .from(matchPairs)
+    .where(eq(matchPairs.round_key, roundKey))
+    .orderBy(desc(matchPairs.pair_score), desc(matchPairs.id));
+  const sampledPairs = pickInspectionPairRows(pairRows, pairLimit);
+  const profileRows = await db.select().from(profiles);
+  const profilesById = new Map(
+    profileRows.map((row) => {
+      const normalized = normalizeProfile(row);
+      return [Number(normalized.id), normalized] as const;
+    }),
+  );
+  const samples: OpsInspectionSample[] = [];
+
+  for (const pairRow of sampledPairs) {
+    const left = profilesById.get(pairRow.user_a_id);
+    const right = profilesById.get(pairRow.user_b_id);
+
+    if (!left || !right) {
+      continue;
+    }
+
+    const perspectives: Array<[typeof left, typeof right]> = [
+      [left, right],
+      [right, left],
+    ];
+
+    for (const [currentUser, targetUser] of perspectives) {
+      const rankedMatch =
+        mode === "friendship"
+          ? getBestFriendshipMatches(currentUser, [targetUser], 1)[0]
+          : getBestMatches(currentUser, [targetUser], 1)[0];
+
+      if (!rankedMatch) {
+        continue;
+      }
+
+      const currentUserSummary = toUserSummary(currentUser);
+      const matchItem = toMatchItem(targetUser, rankedMatch);
+      const currentProfile = parseNumericProfile(currentUser.personality_profile);
+      const targetProfile = parseNumericProfile(targetUser.personality_profile);
+      const currentResolved = resolveV2ProfileCopy(mode, currentProfile);
+      const targetResolved = resolveV2ProfileCopy(mode, targetProfile);
+      const compatibility = getCompatibilityForProfile(mode, currentResolved.profile.id);
+
+      samples.push({
+        id: `${mode}:${pairRow.id}:${currentUser.id}:${targetUser.id}`,
+        mode,
+        pairScore: Number(pairRow.pair_score ?? 0),
+        perspective: {
+          id: Number(currentUser.id),
+          name: currentUser.name,
+          age: currentUser.age,
+          university: currentUser.university,
+          profileTitle: currentResolved.profile.title,
+        },
+        target: {
+          id: Number(targetUser.id),
+          name: targetUser.name,
+          age: targetUser.age,
+          university: targetUser.university,
+          profileTitle: targetResolved.profile.title,
+        },
+        overallScore: rankedMatch.match.overallScore,
+        breakdown: rankedMatch.match.breakdown,
+        highlights: getHighlights(currentUserSummary, matchItem),
+        iceBreakers: generateIceBreakers(currentUserSummary, matchItem),
+        trace: getHighlightDebugTrace(currentUserSummary, matchItem),
+        bestMatches: compatibility.bestMatches,
+        challengingMatches: compatibility.challengingMatches,
+      });
+    }
+  }
+
+  return {
+    mode,
+    roundKey,
+    sampleCount: samples.length,
+    samples,
+  };
+}
+
 export async function getOpsDashboardData(now: Date = new Date()): Promise<OpsDashboardData> {
   const schedule = getMatchSchedule(now);
-  const [announcement, editorAnnouncement, romanceStats, friendshipStats, feedback] = await Promise.all([
+  const [announcement, editorAnnouncement, romanceStats, friendshipStats, feedback, romanceInspection, friendshipInspection] = await Promise.all([
     getResolvedHomeAnnouncement(),
     getHomeAnnouncementEditorState(),
     getModeStats("romance", now, schedule.releaseAt),
     getModeStats("friendship", now, schedule.releaseAt),
     getFeedbackSummary(500),
+    getInspectionDataForMode("romance", schedule.releaseAt),
+    getInspectionDataForMode("friendship", schedule.releaseAt),
   ]);
   const modes = [romanceStats, friendshipStats];
   const alerts = buildOpsAlerts(schedule, modes, feedback, announcement);
@@ -371,7 +619,6 @@ export async function getOpsDashboardData(now: Date = new Date()): Promise<OpsDa
     },
     feedback,
     modes,
+    inspections: [romanceInspection, friendshipInspection],
   };
 }
-
-

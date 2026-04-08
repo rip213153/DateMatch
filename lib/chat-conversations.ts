@@ -3,9 +3,7 @@ import type { QuizMode } from "@/app/data/types";
 import { getDbForMode } from "@/lib/database";
 import { getMatchSchedule } from "@/lib/match-schedule";
 import { buildMutualRoundKey, hasMutualPairForUsers } from "@/lib/mutual-matching";
-import { chatMessages, profiles } from "@/lib/schema";
-
-type ProfileRow = typeof profiles.$inferSelect;
+import { chatMessages } from "@/lib/schema";
 
 export type ChatConversationScope = {
   roundKey: string | null;
@@ -37,12 +35,11 @@ export async function resolveChatConversationScope(
   mode: QuizMode,
   userId: number,
   targetUserId: number,
-  profileRows: ProfileRow[],
   now: Date = new Date()
 ): Promise<ChatConversationScope> {
   const schedule = getMatchSchedule(now);
   if (schedule.isInDisplayWindow) {
-    const canUseMutualPair = await hasMutualPairForUsers(userId, targetUserId, mode, profileRows, schedule.releaseAt, now);
+    const canUseMutualPair = await hasMutualPairForUsers(userId, targetUserId, mode, schedule.releaseAt);
     if (canUseMutualPair) {
       return {
         roundKey: buildMutualRoundKey(mode, schedule.releaseAt),

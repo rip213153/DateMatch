@@ -2,6 +2,7 @@ export type MatchContentMode = "romance" | "friendship";
 
 export type MatchContentContext = {
   mode: MatchContentMode;
+  version?: "legacy" | "v2";
   sameUniversity: boolean;
   ageDiff: number;
   sharedInterests: string[];
@@ -279,7 +280,7 @@ export const MATCH_ICEBREAKER_TEMPLATES: IceBreakerTemplate[] = [
     texts: [
       "感觉你们聊天节奏会挺合拍，可以先从最近的小日常聊起。",
       "你最近有没有一件小事，明明不大，却让你心情很好？",
-      "如果要选一种最舒服的相处感，你会更偏轻松陪伴还是深度交流？",
+      "你平时更容易和哪种朋友熟起来：轻松陪伴型，还是能聊深一点的？",
     ],
   },
   {
@@ -289,7 +290,7 @@ export const MATCH_ICEBREAKER_TEMPLATES: IceBreakerTemplate[] = [
     when: { complementaryMin: 0.66 },
     texts: [
       "你们在 {traitPair} 上挺互补的，可以聊聊各自最舒服的相处节奏。",
-      "感觉你们一个偏主动一个偏接球，适合从轻一点的问题开始聊。",
+      "感觉你们一个更容易起话头，一个更擅长接住话题，可以先从轻一点的近况聊起。",
       "如果一个人负责发起，一个人负责接住，你更像哪一种？",
     ],
   },
@@ -381,6 +382,210 @@ export const MATCH_ICEBREAKER_TEMPLATES: IceBreakerTemplate[] = [
       "你会觉得一个人“好相处”的关键通常是什么？",
       "如果用一个词形容你最近的生活状态，你会选什么？",
       "你最近最愿意反复投入时间的一件事是什么？",
+    ],
+  },
+];
+
+export const ROMANCE_TRAIT_LABELS_V2: Record<string, string> = {
+  approachPace: "接近节奏",
+  reassuranceNeed: "确认需求",
+  boundaryAutonomy: "边界自主",
+  emotionalExpression: "情绪表达",
+  conflictEngagement: "冲突处理",
+  futureOrientation: "未来投入",
+  jealousyRegulation: "不安调节",
+  stabilityPreference: "稳定偏好",
+};
+
+export const FRIENDSHIP_TRAIT_LABELS_V2: Record<string, string> = {
+  connectionFrequency: "联结频率",
+  emotionalHolding: "情绪承接",
+  boundaryClarity: "边界清晰",
+  repairInitiative: "修复主动",
+  dependability: "可靠托底",
+  differenceOpenness: "差异开放",
+  comparisonTolerance: "比较承受",
+  lowPressureCompanionship: "低压陪伴",
+};
+
+export const MATCH_HIGHLIGHT_TEMPLATES_V2: HighlightTemplate[] = [
+  {
+    id: "romance-v2-stability",
+    modes: ["romance"],
+    priority: 86,
+    when: { bothHighTraitsAny: ["stabilityPreference", "futureOrientation"] },
+    texts: [
+      "都重视长期回应",
+      "关系方向感接近",
+      "更像能往后走的关系",
+    ],
+  },
+  {
+    id: "romance-v2-expression",
+    modes: ["romance"],
+    priority: 84,
+    when: { bothHighTraitsAny: ["emotionalExpression", "conflictEngagement"] },
+    texts: [
+      "愿意把话说开",
+      "不太靠猜维持关系",
+      "遇到问题更愿意修复",
+    ],
+  },
+  {
+    id: "romance-v2-autonomy",
+    modes: ["romance"],
+    priority: 82,
+    when: { bothHighTraitsAny: ["boundaryAutonomy"] },
+    texts: [
+      "亲近里也重视边界",
+      "尊重感比黏度更重要",
+      "都需要自己的节奏",
+    ],
+  },
+  {
+    id: "romance-v2-complementary",
+    modes: ["romance"],
+    priority: 80,
+    when: { complementaryTraitsAny: ["approachPace", "reassuranceNeed", "boundaryAutonomy"] },
+    texts: [
+      "{traitPair}有互补空间",
+      "关系节奏能互相校准",
+      "不完全一样但能配合",
+    ],
+  },
+  {
+    id: "friendship-v2-low-pressure",
+    modes: ["friendship"],
+    priority: 86,
+    when: { bothHighTraitsAny: ["lowPressureCompanionship", "dependability"] },
+    texts: [
+      "舒服比热闹更重要",
+      "稳定但不费力",
+      "更像能长久的朋友感",
+    ],
+  },
+  {
+    id: "friendship-v2-repair",
+    modes: ["friendship"],
+    priority: 84,
+    when: { bothHighTraitsAny: ["repairInitiative", "emotionalHolding"] },
+    texts: [
+      "不轻易把关系放掉",
+      "卡住了也愿意修复",
+      "都愿意留下来接住关系",
+    ],
+  },
+  {
+    id: "friendship-v2-difference",
+    modes: ["friendship"],
+    priority: 82,
+    when: { bothHighTraitsAny: ["differenceOpenness", "comparisonTolerance"] },
+    texts: [
+      "能把差异留在关系里",
+      "不容易因为不同就退开",
+      "朋友关系更有弹性",
+    ],
+  },
+  {
+    id: "friendship-v2-frequency",
+    modes: ["friendship"],
+    priority: 80,
+    when: { complementaryTraitsAny: ["connectionFrequency", "lowPressureCompanionship"] },
+    texts: [
+      "{traitPair}不完全一样",
+      "联结方式有互补",
+      "对齐节奏后会很舒服",
+    ],
+  },
+];
+
+export const MATCH_ICEBREAKER_TEMPLATES_V2: IceBreakerTemplate[] = [
+  {
+    id: "romance-v2-stable-opener",
+    modes: ["romance"],
+    priority: 86,
+    when: { bothHighTraitsAny: ["stabilityPreference", "futureOrientation"] },
+    texts: [
+      "你会觉得一段关系开始认真起来，通常是从什么时候？",
+      "对你来说，稳定回应和长期方向，哪个更让人安心？",
+      "如果一段关系让你觉得舒服，通常是因为什么？",
+    ],
+  },
+  {
+    id: "romance-v2-expression-opener",
+    modes: ["romance"],
+    priority: 84,
+    when: { bothHighTraitsAny: ["emotionalExpression", "conflictEngagement"] },
+    texts: [
+      "如果关系里有误会，你更习惯当下说开，还是等情绪稳一点再聊？",
+      "你会更喜欢直接表达的人，还是有分寸但不回避的人？",
+      "你觉得“会沟通”在关系里最重要的部分是什么？",
+    ],
+  },
+  {
+    id: "romance-v2-autonomy-opener",
+    modes: ["romance"],
+    priority: 82,
+    when: { bothHighTraitsAny: ["boundaryAutonomy"] },
+    texts: [
+      "你会怎么理解“亲密但不失去自己”这件事？",
+      "关系里保留自己的节奏，对你来说重要吗？",
+      "你更舒服的亲近方式，是高浓度陪伴还是各自有空间？",
+    ],
+  },
+  {
+    id: "romance-v2-complementary-opener",
+    modes: ["romance"],
+    priority: 80,
+    when: { complementaryTraitsAny: ["approachPace", "reassuranceNeed", "boundaryAutonomy"] },
+    texts: [
+      "如果一个人偏主动、一个人偏观察，怎样的节奏会让彼此都舒服？",
+      "你更习惯先靠近一点试试，还是先确认安全感再往前走？",
+      "在 {traitPair} 这件事上，你通常更在意自己的舒服，还是彼此的对齐？",
+    ],
+  },
+  {
+    id: "friendship-v2-low-pressure-opener",
+    modes: ["friendship"],
+    priority: 86,
+    when: { bothHighTraitsAny: ["lowPressureCompanionship", "dependability"] },
+    texts: [
+      "你会更喜欢高频热闹的友情，还是放着也不会断的友情？",
+      "对你来说，真正靠谱的朋友通常是什么样？",
+      "什么样的朋友节奏会让你觉得最轻松、也最能长久？",
+    ],
+  },
+  {
+    id: "friendship-v2-repair-opener",
+    modes: ["friendship"],
+    priority: 84,
+    when: { bothHighTraitsAny: ["repairInitiative", "emotionalHolding"] },
+    texts: [
+      "如果一段友情有点卡住了，你通常会主动拉回来吗？",
+      "朋友状态不好时，你更偏向陪着，还是帮对方理一理？",
+      "你会觉得哪种朋友最值得自己去修复关系？",
+    ],
+  },
+  {
+    id: "friendship-v2-difference-opener",
+    modes: ["friendship"],
+    priority: 82,
+    when: { bothHighTraitsAny: ["differenceOpenness", "comparisonTolerance"] },
+    texts: [
+      "你最欣赏哪种和自己不太一样的人？",
+      "当朋友和你节奏不同的时候，你通常会更好奇，还是更谨慎？",
+      "你会觉得差异让关系更有意思，还是更考验人？",
+    ],
+  },
+  {
+    id: "friendship-v2-frequency-opener",
+    modes: ["friendship"],
+    priority: 80,
+    when: { complementaryTraitsAny: ["connectionFrequency", "lowPressureCompanionship"] },
+    texts: [
+      "你更容易通过高频互动感受到亲近，还是通过关键时刻的在场？",
+      "如果一段友情安静了一阵子，你通常会觉得自然，还是会开始在意？",
+      "你会怎么判断一段关系虽然不热闹，但其实还在？",
     ],
   },
 ];

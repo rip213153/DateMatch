@@ -1,30 +1,22 @@
 import { NextResponse } from "next/server";
-import { createWeChatBindingState } from "@/lib/wechat-state";
-import { buildWeChatOAuthUrl, getWeChatConfig, isWeChatOAuthConfigured } from "@/lib/wechat";
+import { readPositiveInt } from "@/lib/api-route";
 import { resolveQuizMode } from "@/lib/database";
+import { requireAuthenticatedProfile } from "@/lib/server-auth";
+import { getWeChatConnectAuthContext } from "@/lib/wechat-connect-route-core";
+import { buildWeChatOAuthUrl, getWeChatConfig, isWeChatOAuthConfigured } from "@/lib/wechat";
+import { createWeChatBindingState } from "@/lib/wechat-state";
 
 export const dynamic = "force-dynamic";
 
-function toPositiveInt(value: unknown) {
-  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isInteger(parsed) && parsed > 0) return parsed;
-  }
-  return null;
-}
-
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = toPositiveInt(searchParams.get("userId"));
-    const mode = resolveQuizMode(searchParams.get("mode"));
+    const { mode, authenticatedProfile: profile } = await getWeChatConnectAuthContext(request, {
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
 
-    if (!userId) {
-      return NextResponse.json({ error: "Missing valid userId" }, { status: 400 });
-    }
-
-    const state = createWeChatBindingState(userId, mode);
+    const state = createWeChatBindingState(Number(profile.id), mode);
     const config = getWeChatConfig();
     const connectUrl = isWeChatOAuthConfigured() ? buildWeChatOAuthUrl(state) : null;
 

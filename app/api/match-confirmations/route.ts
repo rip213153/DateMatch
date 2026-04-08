@@ -10,14 +10,18 @@ import {
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { getMatchSchedule } from "@/lib/match-schedule";
 import {
+  getMatchConfirmationsAuthContext,
+  postMatchConfirmationsAuthContext,
+} from "@/lib/match-confirmations-route-core";
+import {
   buildMutualPairConfirmationPatch,
   buildMutualPairConfirmationState,
   buildMutualPairKey,
   getMutualPairRowForUsers,
   getMutualPairRowsForUser,
 } from "@/lib/mutual-matching";
-import { getProfileRowsForMode } from "@/lib/profile-updates";
 import { matchPairs } from "@/lib/schema";
+import { requireAuthenticatedProfile } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -37,21 +41,12 @@ function buildEmptyStatus(): PairStatus {
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = readPositiveInt(searchParams.get("userId"));
-    const mode = resolveQuizMode(searchParams.get("mode"));
-
-    assertApi(userId, "缺少合法的 userId 参数", {
-      status: 400,
-      code: "INVALID_MATCH_CONFIRMATION_USER_ID",
+    const { mode, targetUserIds, authenticatedProfile: profile } = await getMatchConfirmationsAuthContext(request, {
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
     });
-
-    const rawTargetIds = (searchParams.get("targetUserIds") ?? "")
-      .split(",")
-      .map((id) => readPositiveInt(id))
-      .filter((id): id is number => id !== null && id !== userId);
-
-    const targetUserIds = Array.from(new Set(rawTargetIds));
+    const userId = Number(profile.id);
     const statuses: Record<string, PairStatus> = {};
 
     if (targetUserIds.length === 0) {
@@ -64,13 +59,6 @@ export async function GET(request: Request) {
 
     const now = new Date();
     const schedule = getMatchSchedule(now);
-    const profileRows = await getProfileRowsForMode(mode, now);
-    const userExists = profileRows.some((row) => Number(row.id) === userId);
-
-    assertApi(userExists, "用户不存在", {
-      status: 404,
-      code: "MATCH_CONFIRMATION_USER_NOT_FOUND",
-    });
 
     if (!schedule.isInDisplayWindow) {
       for (const targetUserId of targetUserIds) {
@@ -84,10 +72,8 @@ export async function GET(request: Request) {
       });
     }
 
-    const pairRows = await getMutualPairRowsForUser(userId, mode, profileRows, schedule.releaseAt, now);
-    const pairMap = new Map(
-      pairRows.map((pairRow) => [`${pairRow.user_a_id}:${pairRow.user_b_id}`, pairRow]),
-    );
+    const pairRows = await getMutualPairRowsForUser(userId, mode, schedule.releaseAt);
+    const pairMap = new Map(pairRows.map((pairRow) => [`${pairRow.user_a_id}:${pairRow.user_b_id}`, pairRow]));
 
     for (const targetUserId of targetUserIds) {
       const { userAId, userBId } = buildMutualPairKey(userId, targetUserId);
@@ -104,7 +90,7 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     return handleApiRouteError(error, {
-      message: "获取确认状态失败",
+      message: "Failed to fetch match confirmations",
       code: "FETCH_MATCH_CONFIRMATIONS_FAILED",
       logMessage: "Error fetching match confirmations:",
     });
@@ -113,17 +99,20 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = await readJsonBody(request);
-    const userId = readPositiveInt(body.userId);
-    const targetUserId = readPositiveInt(body.targetUserId);
-    const mode = resolveQuizMode(body.mode);
-    const confirmed = readBoolean(body.confirmed, true);
-
-    assertApi(userId && targetUserId, "缺少合法的 userId/targetUserId", {
-      status: 400,
-      code: "INVALID_MATCH_CONFIRMATION_USER_IDS",
+    const { mode, targetUserId, confirmed, authenticatedProfile: profile } = await postMatchConfirmationsAuthContext(request, {
+      readJsonBody,
+      readPositiveInt,
+      readBoolean,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
     });
-    assertApi(userId !== targetUserId, "不能给自己确认", {
+    const userId = Number(profile.id);
+
+    assertApi(targetUserId, "Missing valid targetUserId", {
+      status: 400,
+      code: "INVALID_MATCH_CONFIRMATION_TARGET_USER_ID",
+    });
+    assertApi(userId !== targetUserId, "Cannot confirm yourself", {
       status: 400,
       code: "SELF_CONFIRM_NOT_ALLOWED",
     });
@@ -131,23 +120,20 @@ export async function POST(request: Request) {
     const now = new Date();
     const schedule = getMatchSchedule(now);
 
-    assertApi(schedule.isInDisplayWindow, "当前不在可确认的匹配展示期", {
+    assertApi(schedule.isInDisplayWindow, "Match confirmations are currently closed", {
       status: 403,
       code: "MATCH_CONFIRMATION_CLOSED",
     });
 
     const db = getDbForMode(mode);
-    const profileRows = await getProfileRowsForMode(mode, now);
     const pairRow = await getMutualPairRowForUsers(
       userId,
       targetUserId,
       mode,
-      profileRows,
       schedule.releaseAt,
-      now,
     );
 
-    assertApi(pairRow, "当前轮次没有这组双向推荐", {
+    assertApi(pairRow, "This pair is not available in the current mutual matching round", {
       status: 404,
       code: "MATCH_PAIR_NOT_FOUND",
     });
@@ -168,12 +154,10 @@ export async function POST(request: Request) {
       userId,
       targetUserId,
       mode,
-      profileRows,
       schedule.releaseAt,
-      now,
     );
 
-    assertApi(updatedPairRow, "更新确认状态失败", {
+    assertApi(updatedPairRow, "Failed to refresh match confirmation state", {
       status: 500,
       code: "MATCH_CONFIRMATION_UPDATE_FAILED",
     });
@@ -186,7 +170,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     return handleApiRouteError(error, {
-      message: "更新确认状态失败",
+      message: "Failed to update match confirmation",
       code: "UPDATE_MATCH_CONFIRMATION_FAILED",
       logMessage: "Error updating match confirmation:",
     });

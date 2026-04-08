@@ -1,25 +1,43 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/database";
+﻿import { eq } from "drizzle-orm";
+import {
+  apiSuccess,
+  assertApi,
+  handleApiRouteError,
+  readJsonBody,
+  readPositiveInt,
+  readTrimmedString,
+} from "@/lib/api-route";
+import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { profiles } from "@/lib/schema";
-import { eq } from "drizzle-orm";
+import { requireAuthenticatedProfile } from "@/lib/server-auth";
+import { postUpdateProfileFieldAuthContext } from "@/lib/update-profile-field-route-core";
 
 export async function POST(request: Request) {
   try {
-    const { userId, newIdealDate } = await request.json();
+    const { body, mode, authenticatedProfile: profile } = await postUpdateProfileFieldAuthContext(request, {
+      readJsonBody,
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
+    const newIdealDate = readTrimmedString(body.newIdealDate);
 
-    if (!userId || newIdealDate === undefined) {
-      return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
-    }
+    assertApi(newIdealDate || newIdealDate === "", "缂哄皯蹇呰鍙傛暟", {
+      status: 400,
+      code: "MISSING_IDEAL_DATE",
+    });
 
-    await db
+    await getDbForMode(mode)
       .update(profiles)
       .set({ ideal_date: newIdealDate })
-      .where(eq(profiles.id, userId))
-      .run();
+      .where(eq(profiles.id, Number(profile.id)));
 
-    return NextResponse.json({ success: true, message: "自我介绍已更新" });
+    return apiSuccess({ message: "鐞嗘兂绾︿細宸叉洿鏂?" });
   } catch (error) {
-    console.error("Error updating ideal date:", error);
-    return NextResponse.json({ error: "更新失败" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "鏇存柊澶辫触",
+      code: "UPDATE_IDEAL_DATE_FAILED",
+      logMessage: "Error updating ideal date:",
+    });
   }
 }

@@ -5,32 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { BellRing, Mail, MessageCircle, SendHorizonal, User } from "lucide-react";
 import type { QuizMode } from "@/app/data/types";
 import type { MatchConfirmationStatus } from "@/components/match/types";
+import { deriveChatViewState } from "@/lib/chat-page-state";
+import { type ChatContact, useChatContacts } from "@/lib/use-chat-contacts";
+import { useChatConfirmationStatus } from "@/lib/use-chat-confirmation-status";
+import { hasMutualMessages, hasPendingReply, useChatMessages } from "@/lib/use-chat-messages";
 import { IdealPreferenceDisplay } from "@/components/profile/IdealPreferenceDisplay";
 import { BackButton } from "@/components/ui/back-button";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-
-type ChatContact = {
-  id: number;
-  name: string;
-  age: number;
-  university: string;
-  lastMessage: string | null;
-  lastMessageAt: string | null;
-  email?: string;
-  ideal_date?: string;
-  ideal_date_tags?: string[];
-  bio?: string;
-  interests?: string | string[];
-};
-
-type ChatMessage = {
-  id: number;
-  senderId: number;
-  receiverId: number;
-  content: string;
-  createdAt: string | null;
-};
 
 function toPositiveInt(value: string | null): number | null {
   if (!value) return null;
@@ -79,33 +61,6 @@ function formatInterests(interests: string | string[] | undefined) {
   }
 
   return "暂未填写";
-}
-
-function hasPendingReply(items: ChatMessage[], currentUserId: number, targetUserId: number | null) {
-  if (!targetUserId) return false;
-
-  let sentSinceLastReply = 0;
-
-  for (const item of items) {
-    if (item.senderId === targetUserId && item.receiverId === currentUserId) {
-      sentSinceLastReply = 0;
-      continue;
-    }
-
-    if (item.senderId === currentUserId && item.receiverId === targetUserId) {
-      sentSinceLastReply += 1;
-    }
-  }
-
-  return sentSinceLastReply >= 1;
-}
-
-function buildEmptyConfirmationStatus(): MatchConfirmationStatus {
-  return {
-    selfConfirmed: false,
-    otherConfirmed: false,
-    canMessage: false,
-  };
 }
 
 function getConfirmationCopy(status: MatchConfirmationStatus | null) {
@@ -187,168 +142,102 @@ export default function ChatPage() {
           profileIcon: "text-pink-600",
         };
 
-  const [contacts, setContacts] = useState<ChatContact[]>([]);
-  const [activeContactId, setActiveContactId] = useState<number | null>(targetUserIdFromQuery);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [loadingContacts, setLoadingContacts] = useState(true);
-  const [loadingMessages, setLoadingMessages] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [messageError, setMessageError] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [selectedContact, setSelectedContact] = useState<ChatContact | null>(null);
   const [checkingEmailAccess, setCheckingEmailAccess] = useState(false);
   const [emailUnlocked, setEmailUnlocked] = useState(false);
-  const [confirmationStatus, setConfirmationStatus] = useState<MatchConfirmationStatus | null>(null);
-  const [loadingConfirmationStatus, setLoadingConfirmationStatus] = useState(false);
-  const [updatingConfirmationStatus, setUpdatingConfirmationStatus] = useState(false);
+  const [isPageVisible, setIsPageVisible] = useState(() => (typeof document === "undefined" ? true : !document.hidden));
+  const [isWindowFocused, setIsWindowFocused] = useState(() => (typeof document === "undefined" ? true : document.hasFocus()));
 
   const endRef = useRef<HTMLDivElement | null>(null);
-
+  const {
+    contacts,
+    activeContactId,
+    setActiveContactId,
+    loadingContacts,
+    error,
+    updateContactWithLatestMessage,
+  } = useChatContacts({
+    currentUserId,
+    mode,
+    targetUserIdFromQuery,
+  });
   const activeContact = useMemo(
     () => contacts.find((item) => item.id === activeContactId) ?? null,
     [activeContactId, contacts],
   );
+  const {
+    messages,
+    loadingMessages,
+    sending,
+    messageError,
+    setMessageError,
+    sendMessage,
+    getCachedMessages,
+    isCachedConversationFresh,
+    ensureConversationLoaded,
+  } = useChatMessages({
+    currentUserId,
+    activeContactId,
+    mode,
+    isPageVisible,
+    isWindowFocused,
+    onLatestMessage: updateContactWithLatestMessage,
+  });
   const waitingForReply = useMemo(
     () => (currentUserId ? hasPendingReply(messages, currentUserId, activeContactId) : false),
     [activeContactId, currentUserId, messages],
   );
+  const {
+    confirmationStatus,
+    loadingConfirmationStatus,
+    updatingConfirmationStatus,
+    toggleConfirmation,
+  } = useChatConfirmationStatus({
+    currentUserId,
+    activeContactId,
+    mode,
+    onError: setMessageError,
+  });
   const confirmationCopy = useMemo(() => getConfirmationCopy(confirmationStatus), [confirmationStatus]);
+  const {
+    showMessageSwitchOverlay,
+    showInitialMessageLoading,
+    confirmationDescription,
+    confirmationActionLabel,
+    confirmationActionDisabled,
+  } = useMemo(
+    () =>
+      deriveChatViewState({
+        loadingMessages,
+        messageCount: messages.length,
+        loadingConfirmationStatus,
+        updatingConfirmationStatus,
+        confirmationCopy,
+      }),
+    [confirmationCopy, loadingConfirmationStatus, loadingMessages, messages.length, updatingConfirmationStatus],
+  );
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     endRef.current?.scrollIntoView({ behavior, block: "end" });
   }, []);
 
-  const loadContacts = useCallback(async () => {
-    if (!currentUserId) return;
-
-    setLoadingContacts(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`/api/chat/contacts?userId=${currentUserId}&mode=${mode}`, {
-        cache: "no-store",
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        setContacts([]);
-        setError(data?.error || "加载聊天联系人失败，请稍后重试。");
-        return;
-      }
-
-      const nextContacts = Array.isArray(data.contacts) ? (data.contacts as ChatContact[]) : [];
-      setContacts(nextContacts);
-      setActiveContactId((current) => {
-        if (current && nextContacts.some((item) => item.id === current)) {
-          return current;
-        }
-        if (targetUserIdFromQuery && nextContacts.some((item) => item.id === targetUserIdFromQuery)) {
-          return targetUserIdFromQuery;
-        }
-        return nextContacts[0]?.id ?? null;
-      });
-    } catch {
-      setContacts([]);
-      setError("加载聊天联系人失败，请稍后重试。");
-    } finally {
-      setLoadingContacts(false);
-    }
-  }, [currentUserId, mode, targetUserIdFromQuery]);
-
-  const loadMessages = useCallback(
-    async (userId: number, targetUserId: number, silent = false) => {
-      if (!silent) setLoadingMessages(true);
-      setMessageError(null);
-
-      try {
-        const response = await fetch(`/api/chat/messages?userId=${userId}&targetUserId=${targetUserId}&mode=${mode}`, {
-          cache: "no-store",
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-          if (!silent) setMessages([]);
-          setMessageError(data?.error || "加载消息失败，请稍后重试。");
-          return;
-        }
-
-        const nextMessages = Array.isArray(data.messages) ? (data.messages as ChatMessage[]) : [];
-        setMessages(nextMessages);
-      } catch {
-        if (!silent) setMessages([]);
-        setMessageError("加载消息失败，请稍后重试。");
-      } finally {
-        if (!silent) setLoadingMessages(false);
-      }
-    },
-    [mode],
-  );
-
   useEffect(() => {
-    if (!currentUserId) {
-      setLoadingContacts(false);
-      setError("缺少合法 userId，请从匹配页进入聊天。");
-      return;
-    }
+    const handleVisibilityChange = () => setIsPageVisible(!document.hidden);
+    const handleFocus = () => setIsWindowFocused(true);
+    const handleBlur = () => setIsWindowFocused(false);
 
-    void loadContacts();
-  }, [currentUserId, loadContacts]);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
 
-  useEffect(() => {
-    if (!currentUserId || !activeContactId) {
-      setMessages([]);
-      return;
-    }
-
-    void loadMessages(currentUserId, activeContactId);
-
-    const timer = window.setInterval(() => {
-      void loadMessages(currentUserId, activeContactId, true);
-    }, 1500);
-
-    return () => window.clearInterval(timer);
-  }, [activeContactId, currentUserId, loadMessages]);
-
-  useEffect(() => {
-    if (!currentUserId || !activeContactId) {
-      setConfirmationStatus(null);
-      setLoadingConfirmationStatus(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    setLoadingConfirmationStatus(true);
-
-    fetch(
-      `/api/match-confirmations?userId=${currentUserId}&targetUserIds=${encodeURIComponent(String(activeContactId))}&mode=${mode}`,
-      {
-        cache: "no-store",
-        signal: controller.signal,
-      },
-    )
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(data?.error || "加载确认状态失败，请稍后重试。");
-        }
-
-        const nextStatus = (data?.statuses?.[String(activeContactId)] as MatchConfirmationStatus | undefined) ?? null;
-        setConfirmationStatus(nextStatus);
-      })
-      .catch((fetchError) => {
-        if (fetchError instanceof Error && fetchError.name === "AbortError") {
-          return;
-        }
-        setConfirmationStatus(null);
-      })
-      .finally(() => {
-        setLoadingConfirmationStatus(false);
-      });
-
-    return () => controller.abort();
-  }, [activeContactId, currentUserId, mode]);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -356,126 +245,53 @@ export default function ChatPage() {
     }, 100);
 
     return () => window.clearTimeout(timer);
-  }, [messages.length, scrollToBottom]);
+  }, [activeContactId, messages.length, scrollToBottom]);
 
   const openProfile = async (contact: ChatContact) => {
     setSelectedContact(contact);
     setProfileOpen(true);
-    setEmailUnlocked(false);
+    setCheckingEmailAccess(false);
 
     if (!currentUserId) return;
 
-    if (contact.id === activeContactId) {
-      const sentByCurrentUser = messages.some((message) => message.senderId === currentUserId);
-      const sentByTargetUser = messages.some((message) => message.senderId === contact.id);
-      setEmailUnlocked(sentByCurrentUser && sentByTargetUser);
+    const cachedMessages = getCachedMessages(contact.id);
+
+    if (cachedMessages) {
+      setEmailUnlocked(hasMutualMessages(cachedMessages, currentUserId, contact.id));
+    } else {
+      setEmailUnlocked(false);
+    }
+
+    if (contact.id === activeContactId || isCachedConversationFresh(contact.id)) {
       return;
     }
 
     setCheckingEmailAccess(true);
     try {
-      const response = await fetch(`/api/chat/messages?userId=${currentUserId}&targetUserId=${contact.id}&mode=${mode}`, {
-        cache: "no-store",
+      const nextMessages = await ensureConversationLoaded(contact.id, {
+        useCachedFirst: true,
+        forceRefresh: true,
       });
-      const data = await response.json();
-      const chatMessages: Array<{ senderId: number }> = Array.isArray(data.messages) ? data.messages : [];
-      const sentByCurrentUser = chatMessages.some((message) => message.senderId === currentUserId);
-      const sentByTargetUser = chatMessages.some((message) => message.senderId === contact.id);
-      setEmailUnlocked(sentByCurrentUser && sentByTargetUser);
+      if (nextMessages) {
+        setEmailUnlocked(hasMutualMessages(nextMessages, currentUserId, contact.id));
+      }
     } catch {
-      setEmailUnlocked(false);
+      if (!cachedMessages) {
+        setEmailUnlocked(false);
+      }
     } finally {
       setCheckingEmailAccess(false);
     }
   };
 
-  const toggleConfirmation = async () => {
-    if (!currentUserId || !activeContactId || updatingConfirmationStatus) return;
-
-    const currentStatus = confirmationStatus ?? buildEmptyConfirmationStatus();
-    if (currentStatus.canMessage && currentStatus.selfConfirmed && currentStatus.otherConfirmed) {
-      return;
-    }
-
-    setUpdatingConfirmationStatus(true);
-    try {
-      const response = await fetch("/api/match-confirmations", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          userId: currentUserId,
-          targetUserId: activeContactId,
-          confirmed: !currentStatus.selfConfirmed,
-          mode,
-        }),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.error || "更新确认状态失败，请稍后重试。");
-      }
-
-      setConfirmationStatus((data?.status as MatchConfirmationStatus | undefined) ?? currentStatus);
-    } catch (toggleError) {
-      setMessageError(toggleError instanceof Error ? toggleError.message : "更新确认状态失败，请稍后重试。");
-    } finally {
-      setUpdatingConfirmationStatus(false);
-    }
-  };
-
   const handleSend = async () => {
-    if (!currentUserId || !activeContactId || !input.trim() || sending) return;
-
     const content = input.trim();
-    setSending(true);
-    setMessageError(null);
+    if (!content) return;
 
-    try {
-      const response = await fetch("/api/chat/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          senderId: currentUserId,
-          receiverId: activeContactId,
-          content,
-          mode,
-        }),
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        setMessageError(data?.error || "发送失败，请稍后重试。");
-        return;
-      }
-
-      const newMessage = data.message as ChatMessage;
-      setMessages((current) => [...current, newMessage]);
-      setContacts((current) =>
-        current
-          .map((contact) =>
-            contact.id === activeContactId
-              ? {
-                  ...contact,
-                  lastMessage: newMessage.content,
-                  lastMessageAt: newMessage.createdAt,
-                }
-              : contact,
-          )
-          .sort((a, b) => {
-            const aTime = a.lastMessageAt ? Date.parse(a.lastMessageAt) : 0;
-            const bTime = b.lastMessageAt ? Date.parse(b.lastMessageAt) : 0;
-            if (aTime !== bTime) return bTime - aTime;
-            return a.id - b.id;
-          }),
-      );
+    const success = await sendMessage(content);
+    if (success) {
       setInput("");
       window.setTimeout(() => scrollToBottom("smooth"), 0);
-    } catch {
-      setMessageError("发送失败，请稍后重试。");
-    } finally {
-      setSending(false);
     }
   };
 
@@ -584,27 +400,27 @@ export default function ChatPage() {
                           <BellRing className="h-4 w-4" />
                           {loadingConfirmationStatus ? "正在同步确认状态" : confirmationCopy.title}
                         </div>
-                        <div className="mt-1 text-xs leading-relaxed text-emerald-700">{confirmationCopy.description}</div>
+                        <div className="mt-1 text-xs leading-relaxed text-emerald-700">{confirmationDescription}</div>
                       </div>
                       <Button
                         type="button"
-                        variant={confirmationCopy.actionDisabled ? "outline" : "default"}
-                        disabled={confirmationCopy.actionDisabled || updatingConfirmationStatus}
+                        variant={confirmationActionDisabled ? "outline" : "default"}
+                        disabled={confirmationActionDisabled}
                         onClick={() => void toggleConfirmation()}
                         className={
-                          confirmationCopy.actionDisabled
+                          confirmationActionDisabled
                             ? "border-emerald-200 bg-white text-emerald-600"
                             : "bg-emerald-600 text-white hover:bg-emerald-700"
                         }
                       >
-                        {updatingConfirmationStatus ? "处理中..." : confirmationCopy.actionLabel}
+                        {confirmationActionLabel}
                       </Button>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto px-4 py-4">
-                  {loadingMessages ? (
+                <div className="relative flex-1 overflow-y-auto px-4 py-4">
+                  {showInitialMessageLoading ? (
                     <div className="py-10 text-center text-sm text-gray-500">正在加载消息...</div>
                   ) : messages.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-center text-sm text-gray-500">
@@ -614,7 +430,7 @@ export default function ChatPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-3">
+                    <div className={`space-y-3 transition ${showMessageSwitchOverlay ? "pointer-events-none opacity-40 blur-[1px]" : ""}`}>
                       {messages.map((message) => {
                         const isMine = message.senderId === currentUserId;
                         return (
@@ -629,6 +445,17 @@ export default function ChatPage() {
                       <div ref={endRef} />
                     </div>
                   )}
+
+                  {showMessageSwitchOverlay ? (
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                      <div className="rounded-2xl border border-white/80 bg-white/88 px-4 py-3 text-center shadow-sm backdrop-blur-sm">
+                        <div className="text-sm font-medium text-gray-800">
+                          正在切换到 {activeContact?.name ?? "新联系人"}
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500">聊天记录马上就好，不会打断当前页面。</div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="border-t border-gray-100 px-4 py-4">
@@ -643,11 +470,12 @@ export default function ChatPage() {
                           void handleSend();
                         }
                       }}
-                      rows={2}
-                      className="min-h-[56px] flex-1 resize-none rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-pink-300 focus:ring-2 focus:ring-pink-500/10"
-                      placeholder={mode === "friendship" ? "发一句打招呼的话，聊聊最近想一起做的事..." : "发一句打招呼的话，聊聊你们都感兴趣的话题..."}
-                    />
-                    <Button type="button" onClick={() => void handleSend()} disabled={!input.trim() || sending} className={`h-14 rounded-2xl px-5 text-white ${theme.accentButton}`}>
+                       rows={2}
+                        className="min-h-[56px] flex-1 resize-none rounded-2xl border border-gray-200 px-4 py-3 text-sm outline-none transition focus:border-pink-300 focus:ring-2 focus:ring-pink-500/10"
+                       placeholder={mode === "friendship" ? "发一句打招呼的话，聊聊最近想一起做的事..." : "发一句打招呼的话，聊聊你们都感兴趣的话题..."}
+                       disabled={showMessageSwitchOverlay}
+                     />
+                    <Button type="button" onClick={() => void handleSend()} disabled={!input.trim() || sending || showMessageSwitchOverlay} className={`h-14 rounded-2xl px-5 text-white ${theme.accentButton}`}>
                       <SendHorizonal className="h-4 w-4" />
                     </Button>
                   </div>

@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿﻿import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import { real } from "drizzle-orm/sqlite-core";
 
@@ -78,6 +78,7 @@ export const matchPairs = sqliteTable(
     roundScoreIdx: index("match_pairs_round_score_idx").on(table.round_key, table.pair_score),
     roundUserAIdx: index("match_pairs_round_user_a_idx").on(table.round_key, table.user_a_id),
     roundUserBIdx: index("match_pairs_round_user_b_idx").on(table.round_key, table.user_b_id),
+    modeCreatedIdx: index("match_pairs_mode_created_idx").on(table.mode, table.created_at),
   })
 );
 

@@ -1,17 +1,33 @@
-import { PersonalityTraits, UserProfile } from "@/app/data/types";
+import type { PersonalityTraits, RomanceTraitsV2, UserProfile } from "@/app/data/types";
 import { normalizeIdealPreferenceTags } from "@/app/data/idealPreferenceTags";
+import { ROMANCE_TRAIT_LABELS, ROMANCE_TRAIT_LABELS_V2 } from "@/app/data/matchContent";
 
 type BinaryGender = "M" | "F" | "ANY";
+type TraitVersion = "legacy" | "v2";
+type NumericTraits = Record<string, number>;
+
+type TraitConfig = {
+  version: TraitVersion;
+  keys: string[];
+  weights: Record<string, number>;
+  complementaryTraits: Set<string>;
+  complementaryTargetGap: number;
+  complementaryDivisor: number;
+  similarityDivisor: number;
+  defaults: NumericTraits;
+  labels: Record<string, string>;
+};
 
 type MatchingProfile = {
   id: string;
   gender: BinaryGender;
   lookingFor: BinaryGender;
-  traits: PersonalityTraits;
+  traits: NumericTraits;
   campusTags: string[];
   idealTags: string[];
   age: number;
   university: string;
+  traitVersion: TraitVersion;
 };
 
 type MatchBreakdown = {
@@ -21,43 +37,99 @@ type MatchBreakdown = {
   complementary: number;
 };
 
-const TRAIT_WEIGHTS: Record<keyof PersonalityTraits, number> = {
-  commitment: 2.5,
-  career: 1.5,
-  dateStyle: 1.5,
-  emotionalReadiness: 1.5,
-  communication: 1.0,
-  flexibility: 1.0,
-  socialStyle: 0.5,
-  independence: 0.5,
+type TraitSignals = {
+  bothHighTraits: string[];
+  complementaryTraits: string[];
 };
 
-const COMPLEMENTARY_TRAITS = new Set<keyof PersonalityTraits>([
-  "socialStyle",
-  "independence",
-  "flexibility",
-]);
+type MatchDetails = {
+  score100: number;
+  baseScorePercent: number;
+  tagBonusPercent: number;
+  breakdown: MatchBreakdown;
+  sharedTags: string[];
+  sharedIdealTags: string[];
+  traitSignals: TraitSignals;
+  config: TraitConfig;
+  versionConfidence: number;
+};
 
-const TRAIT_KEYS: (keyof PersonalityTraits)[] = [
-  "socialStyle",
-  "emotionalReadiness",
-  "dateStyle",
-  "commitment",
-  "communication",
-  "independence",
-  "career",
-  "flexibility",
-];
+const LEGACY_TRAIT_CONFIG: TraitConfig = {
+  version: "legacy",
+  keys: [
+    "socialStyle",
+    "emotionalReadiness",
+    "dateStyle",
+    "commitment",
+    "communication",
+    "independence",
+    "career",
+    "flexibility",
+  ],
+  weights: {
+    commitment: 2.5,
+    career: 1.5,
+    dateStyle: 1.5,
+    emotionalReadiness: 1.5,
+    communication: 1.0,
+    flexibility: 1.0,
+    socialStyle: 0.5,
+    independence: 0.5,
+  },
+  complementaryTraits: new Set(["socialStyle", "independence", "flexibility"]),
+  complementaryTargetGap: 3,
+  complementaryDivisor: 4.9,
+  similarityDivisor: 10,
+  defaults: {
+    socialStyle: 5,
+    emotionalReadiness: 5,
+    dateStyle: 5,
+    commitment: 5,
+    communication: 5,
+    independence: 5,
+    career: 5,
+    flexibility: 5,
+  } satisfies PersonalityTraits,
+  labels: ROMANCE_TRAIT_LABELS,
+};
 
-const DEFAULT_TRAITS: PersonalityTraits = {
-  socialStyle: 5,
-  emotionalReadiness: 5,
-  dateStyle: 5,
-  commitment: 5,
-  communication: 5,
-  independence: 5,
-  career: 5,
-  flexibility: 5,
+const V2_TRAIT_CONFIG: TraitConfig = {
+  version: "v2",
+  keys: [
+    "approachPace",
+    "reassuranceNeed",
+    "boundaryAutonomy",
+    "emotionalExpression",
+    "conflictEngagement",
+    "futureOrientation",
+    "jealousyRegulation",
+    "stabilityPreference",
+  ],
+  weights: {
+    approachPace: 1.1,
+    reassuranceNeed: 1.6,
+    boundaryAutonomy: 1.2,
+    emotionalExpression: 1.2,
+    conflictEngagement: 1.4,
+    futureOrientation: 1.7,
+    jealousyRegulation: 1.1,
+    stabilityPreference: 1.8,
+  },
+  complementaryTraits: new Set(["approachPace", "boundaryAutonomy"]),
+  complementaryTargetGap: 2.2,
+  complementaryDivisor: 4.5,
+  similarityDivisor: 9,
+  defaults: {
+    approachPace: 5,
+    reassuranceNeed: 5,
+    boundaryAutonomy: 5,
+    emotionalExpression: 5,
+    conflictEngagement: 5,
+    futureOrientation: 5,
+    jealousyRegulation: 5,
+    stabilityPreference: 5,
+  } satisfies RomanceTraitsV2,
+  labels: ROMANCE_TRAIT_LABELS_V2,
 };
 
 function clamp01(value: number): number {
@@ -72,20 +144,20 @@ function clampTrait(value: unknown): number {
 
 function normalizeGender(value: unknown): BinaryGender {
   const text = String(value ?? "").trim().toLowerCase();
-  if (["m", "male", "man", "boy", "\u7537"].includes(text)) return "M";
-  if (["f", "female", "woman", "girl", "\u5973"].includes(text)) return "F";
+  if (["m", "male", "man", "boy", "男"].includes(text)) return "M";
+  if (["f", "female", "woman", "girl", "女"].includes(text)) return "F";
   return "ANY";
 }
 
 function normalizeLookingFor(value: unknown): BinaryGender {
   const text = String(value ?? "").trim().toLowerCase();
-  if (["any", "all", "\u90fd\u53ef\u4ee5", "\u4e0d\u9650"].includes(text)) return "ANY";
-  if (["m", "male", "man", "boy", "\u7537"].includes(text)) return "M";
-  if (["f", "female", "woman", "girl", "\u5973"].includes(text)) return "F";
+  if (["any", "all", "都可以", "不限"].includes(text)) return "ANY";
+  if (["m", "male", "man", "boy", "男"].includes(text)) return "M";
+  if (["f", "female", "woman", "girl", "女"].includes(text)) return "F";
   return "ANY";
 }
 
-function parseTraits(value: unknown): PersonalityTraits {
+function parseTraits(value: unknown): NumericTraits {
   let raw: unknown = value;
 
   if (typeof raw === "string") {
@@ -97,21 +169,36 @@ function parseTraits(value: unknown): PersonalityTraits {
   }
 
   if (!raw || typeof raw !== "object") {
-    return { ...DEFAULT_TRAITS };
+    return {};
   }
 
-  const obj = raw as Partial<Record<keyof PersonalityTraits, unknown>>;
+  const result: NumericTraits = {};
+  for (const [key, current] of Object.entries(raw)) {
+    const numericValue = Number(current);
+    if (Number.isFinite(numericValue)) {
+      result[key] = clampTrait(numericValue);
+    }
+  }
 
-  return {
-    socialStyle: clampTrait(obj.socialStyle),
-    emotionalReadiness: clampTrait(obj.emotionalReadiness),
-    dateStyle: clampTrait(obj.dateStyle),
-    commitment: clampTrait(obj.commitment),
-    communication: clampTrait(obj.communication),
-    independence: clampTrait(obj.independence),
-    career: clampTrait(obj.career),
-    flexibility: clampTrait(obj.flexibility),
-  };
+  return result;
+}
+
+function inferTraitVersion(traits: NumericTraits): TraitVersion {
+  const keys = new Set(Object.keys(traits));
+  const legacyHits = LEGACY_TRAIT_CONFIG.keys.filter((key) => keys.has(key)).length;
+  const v2Hits = V2_TRAIT_CONFIG.keys.filter((key) => keys.has(key)).length;
+  return v2Hits > legacyHits ? "v2" : "legacy";
+}
+
+function getTraitConfig(version: TraitVersion): TraitConfig {
+  return version === "v2" ? V2_TRAIT_CONFIG : LEGACY_TRAIT_CONFIG;
+}
+
+function mergeTraitsWithDefaults(traits: NumericTraits, config: TraitConfig): NumericTraits {
+  return config.keys.reduce<NumericTraits>((acc, key) => {
+    acc[key] = clampTrait(traits[key] ?? config.defaults[key]);
+    return acc;
+  }, {});
 }
 
 function normalizeTagText(input: unknown): string {
@@ -146,14 +233,14 @@ function normalizeCampusTags(user: UserProfile): string[] {
           }
         } else {
           raw
-            .split(/[\n,\uff0c\u3001;\uff1b|]+/)
+            .split(/[\n,，、;；|]+/)
             .map((item) => item.trim())
             .filter(Boolean)
             .forEach((item) => bucket.add(item.toLowerCase()));
         }
       } catch {
         raw
-          .split(/[\n,\uff0c\u3001;\uff1b|]+/)
+          .split(/[\n,，、;；|]+/)
           .map((item) => item.trim())
           .filter(Boolean)
           .forEach((item) => bucket.add(item.toLowerCase()));
@@ -199,16 +286,19 @@ function toMatchingProfile(user: UserProfile): MatchingProfile {
     seeking?: unknown;
     personality_profile?: unknown;
   };
+  const parsedTraits = parseTraits(dynamic.personality_profile ?? user.personality_profile);
+  const traitVersion = inferTraitVersion(parsedTraits);
 
   return {
     id: String(user.id),
     gender: normalizeGender(user.gender),
     lookingFor: normalizeLookingFor(dynamic.lookingFor ?? dynamic.seeking ?? user.seeking),
-    traits: parseTraits(dynamic.personality_profile ?? user.personality_profile),
+    traits: mergeTraitsWithDefaults(parsedTraits, getTraitConfig(traitVersion)),
     campusTags: normalizeCampusTags(user),
     idealTags: normalizeIdealTags(user),
     age: Number.isFinite(Number(user.age)) ? Number(user.age) : 0,
     university: String(user.university ?? "").trim(),
+    traitVersion,
   };
 }
 
@@ -218,40 +308,56 @@ function isOrientationCompatible(userA: MatchingProfile, userB: MatchingProfile)
   return true;
 }
 
-type MatchDetails = {
-  score100: number;
-  baseScorePercent: number;
-  tagBonusPercent: number;
-  breakdown: MatchBreakdown;
-  sharedTags: string[];
-  sharedIdealTags: string[];
-};
+function resolveConfig(userA: MatchingProfile, userB: MatchingProfile): TraitConfig {
+  if (userA.traitVersion === "v2" || userB.traitVersion === "v2") {
+    return V2_TRAIT_CONFIG;
+  }
+  return LEGACY_TRAIT_CONFIG;
+}
+
+function getVersionConfidence(userA: MatchingProfile, userB: MatchingProfile): number {
+  return userA.traitVersion === userB.traitVersion ? 1 : 0.72;
+}
 
 function calculateMatchDetails(userA: MatchingProfile, userB: MatchingProfile): MatchDetails {
+  const config = resolveConfig(userA, userB);
+  const versionConfidence = getVersionConfidence(userA, userB);
+  const traitsA = mergeTraitsWithDefaults(userA.traits, config);
+  const traitsB = mergeTraitsWithDefaults(userB.traits, config);
+
   let weightedScoreSum = 0;
   let totalWeight = 0;
-
   let complementaryScoreSum = 0;
   let complementaryCount = 0;
 
-  for (const traitKey of TRAIT_KEYS) {
-    const weight = TRAIT_WEIGHTS[traitKey];
-    const valA = clampTrait(userA.traits[traitKey]);
-    const valB = clampTrait(userB.traits[traitKey]);
+  const bothHighTraits: string[] = [];
+  const complementaryTraits: string[] = [];
+
+  for (const traitKey of config.keys) {
+    const weight = config.weights[traitKey] ?? 1;
+    const valA = clampTrait(traitsA[traitKey]);
+    const valB = clampTrait(traitsB[traitKey]);
     const diff = Math.abs(valA - valB);
 
-    const penalty = COMPLEMENTARY_TRAITS.has(traitKey)
-      ? Math.min(((diff - 3) ** 2) / 4.9, 10)
-      : Math.min((diff ** 2) / 10, 10);
+    const isComplementary = config.complementaryTraits.has(traitKey);
+    const penalty = isComplementary
+      ? Math.min(((diff - config.complementaryTargetGap) ** 2) / config.complementaryDivisor, 10)
+      : Math.min((diff ** 2) / config.similarityDivisor, 10);
 
     const itemScore = 10 - penalty;
-
     weightedScoreSum += itemScore * weight;
     totalWeight += weight * 10;
 
-    if (COMPLEMENTARY_TRAITS.has(traitKey)) {
+    if (valA >= 7 && valB >= 7) {
+      bothHighTraits.push(traitKey);
+    }
+
+    if (isComplementary) {
       complementaryScoreSum += itemScore;
       complementaryCount += 1;
+      if (diff >= 2 && diff <= 5) {
+        complementaryTraits.push(traitKey);
+      }
     }
   }
 
@@ -260,31 +366,44 @@ function calculateMatchDetails(userA: MatchingProfile, userB: MatchingProfile): 
   const campusOverlap = getOverlapPercent(userA.campusTags, userB.campusTags);
   const idealOverlap = getOverlapPercent(userA.idealTags, userB.idealTags);
   const tagBonusPercent = getWeightedPercent([
-    { percent: campusOverlap.percent, weight: 0.68 },
-    { percent: idealOverlap.percent, weight: 0.32 },
+    { percent: campusOverlap.percent, weight: 0.62 },
+    { percent: idealOverlap.percent, weight: 0.38 },
   ]);
 
   const ageDiff = Math.abs(userA.age - userB.age);
   let background = 0;
-  if (userA.university && userB.university && userA.university === userB.university) background += 0.52;
+  if (userA.university && userB.university && userA.university === userB.university) background += 0.5;
   if (ageDiff <= 2) background += 0.2;
   else if (ageDiff <= 5) background += 0.1;
   if (isOrientationCompatible(userA, userB)) background += 0.12;
 
+  const rawPersonality = clamp01(baseScorePercent / 100);
+  const rawComplementary =
+    complementaryCount > 0 ? clamp01(complementaryScoreSum / (complementaryCount * 10)) : 0;
+
+  // When legacy and V2 trait profiles mix, treat personality/complementary signals as lower-confidence
+  // instead of letting neutral defaults inflate compatibility.
   const breakdown: MatchBreakdown = {
-    personality: clamp01(baseScorePercent / 100),
+    personality: clamp01(rawPersonality * versionConfidence + 0.5 * (1 - versionConfidence)),
     interests: clamp01(tagBonusPercent / 100),
     background: clamp01(background),
     complementary:
-      complementaryCount > 0 ? clamp01(complementaryScoreSum / (complementaryCount * 10)) : 0,
+      versionConfidence === 1
+        ? rawComplementary
+        : clamp01(rawComplementary * 0.6 + 0.4 * (1 - versionConfidence)),
   };
 
   const rawScore =
-    breakdown.personality * 0.72 +
-    breakdown.interests * 0.1 +
-    breakdown.background * 0.1 +
-    breakdown.complementary * 0.08;
-  const calibratedScore = Math.pow(clamp01(rawScore), 1.75);
+    (config.version === "v2"
+      ? breakdown.personality * 0.68 +
+        breakdown.interests * 0.1 +
+        breakdown.background * 0.08 +
+        breakdown.complementary * 0.14
+      : breakdown.personality * 0.72 +
+        breakdown.interests * 0.1 +
+        breakdown.background * 0.1 +
+        breakdown.complementary * 0.08);
+  const calibratedScore = Math.pow(clamp01(rawScore), config.version === "v2" ? 1.62 : 1.75);
 
   return {
     score100: Math.max(0, Math.min(Math.round(calibratedScore * 100), 100)),
@@ -293,42 +412,55 @@ function calculateMatchDetails(userA: MatchingProfile, userB: MatchingProfile): 
     breakdown,
     sharedTags: campusOverlap.shared,
     sharedIdealTags: idealOverlap.shared,
+    traitSignals: {
+      bothHighTraits,
+      complementaryTraits,
+    },
+    config,
+    versionConfidence,
   };
 }
 
-function buildHighlights(
-  userA: MatchingProfile,
-  userB: MatchingProfile,
-  details: MatchDetails
-): string[] {
+function buildHighlights(userA: MatchingProfile, userB: MatchingProfile, details: MatchDetails): string[] {
   const list: string[] = [];
+  const { labels } = details.config;
 
   if (userA.university && userA.university === userB.university) {
-    list.push("\u540c\u6821");
+    list.push("同校");
   }
 
   if (Math.abs(userA.age - userB.age) <= 2) {
-    list.push("\u5e74\u9f84\u76f8\u8fd1");
+    list.push("年龄相近");
   }
 
   if (details.breakdown.personality >= 0.78) {
-    list.push("\u6027\u683c\u5951\u5408\u5ea6\u9ad8");
+    list.push(details.config.version === "v2" ? "关系节奏整体契合" : "性格契合度高");
   }
 
-  if (details.breakdown.complementary >= 0.62) {
-    list.push("\u6027\u683c\u4e92\u8865\u6027\u5f3a");
+  if (details.traitSignals.bothHighTraits.length > 0) {
+    const key = details.traitSignals.bothHighTraits[0];
+    list.push(`共同重视: ${labels[key] ?? key}`);
+  }
+
+  if (details.traitSignals.complementaryTraits.length > 0) {
+    const key = details.traitSignals.complementaryTraits[0];
+    list.push(`互补亮点: ${labels[key] ?? key}`);
   }
 
   if (details.sharedTags.length > 0) {
-    list.push(`\u5171\u540c\u6807\u7b7e: ${details.sharedTags.slice(0, 3).join("\u3001")}`);
+    list.push(`共同标签: ${details.sharedTags.slice(0, 3).join("、")}`);
   }
 
   if (details.sharedIdealTags.length > 0) {
-    list.push(`\u7ea6\u4f1a\u504f\u597d\u540c\u9891: ${details.sharedIdealTags.slice(0, 2).join("\u3001")}`);
+    list.push(`偏好同频: ${details.sharedIdealTags.slice(0, 2).join("、")}`);
+  }
+
+  if (details.versionConfidence < 1) {
+    list.push("新旧题库混合匹配");
   }
 
   if (list.length === 0) {
-    list.push("\u4ef7\u503c\u89c2\u4e0e\u751f\u6d3b\u8282\u594f\u8f83\u4e3a\u63a5\u8fd1");
+    list.push(details.config.version === "v2" ? "相处期待和关系理解比较接近" : "价值观与生活节奏较为接近");
   }
 
   return list.slice(0, 4);
@@ -336,29 +468,36 @@ function buildHighlights(
 
 function buildRecommendations(details: MatchDetails): string[] {
   const tips: string[] = [];
+  const { labels } = details.config;
+  const primaryShared = details.traitSignals.bothHighTraits[0];
+  const primaryComplementary = details.traitSignals.complementaryTraits[0];
 
   if (details.breakdown.interests >= 0.35) {
-    tips.push("\u53ef\u4ee5\u4ece\u5171\u540c\u6807\u7b7e\u5165\u624b\uff0c\u5feb\u901f\u627e\u5230\u8bdd\u9898\u3002");
+    tips.push("可以先从共同兴趣或最近在做的事聊起，比较容易自然进入状态。");
   }
 
   if (details.sharedIdealTags.length > 0) {
-    tips.push("\u4f60\u4eec\u5728\u7ea6\u4f1a\u504f\u597d\u4e0a\u6709\u91cd\u5408\uff0c\u53ef\u4ee5\u76f4\u63a5\u804a\u804a\u7b2c\u4e00\u6b21\u60f3\u600e\u4e48\u89c1\u9762\u3002");
+    tips.push("你们在偏好标签上有重合，可以直接聊聊什么样的见面和相处最舒服。");
   }
 
-  if (details.breakdown.complementary >= 0.6) {
-    tips.push("\u4f60\u4eec\u4e92\u8865\u6027\u4e0d\u9519\uff0c\u4e00\u65b9\u4e3b\u5bfc\u8bdd\u9898\u3001\u4e00\u65b9\u54cd\u5e94\uff0c\u6548\u679c\u4f1a\u5f88\u597d\u3002");
+  if (primaryShared) {
+    tips.push(`你们都比较看重“${labels[primaryShared] ?? primaryShared}”，适合从自己在关系里最在意的点聊起。`);
   }
 
-  if (details.breakdown.personality >= 0.75) {
-    tips.push("\u6027\u683c\u5951\u5408\u5ea6\u9ad8\uff0c\u5148\u804a\u6821\u56ed\u65e5\u5e38\u6216\u6700\u8fd1\u5174\u8da3\u5373\u53ef\u7834\u51b0\u3002");
+  if (primaryComplementary) {
+    tips.push(`你们在“${labels[primaryComplementary] ?? primaryComplementary}”上有一点互补，先对齐彼此节奏会更顺。`);
   }
 
   if (details.breakdown.background >= 0.5) {
-    tips.push("\u80cc\u666f\u76f8\u8fd1\uff0c\u53ef\u4ee5\u76f4\u63a5\u7ea6\u4e00\u6b21\u7ebf\u4e0b\u8f7b\u677e\u89c1\u9762\u3002");
+    tips.push("生活场景比较接近，先约一次低压力见面会比长时间硬聊更自然。");
+  }
+
+  if (details.versionConfidence < 1) {
+    tips.push("这组结果包含新旧题库的混合画像，可以先从兴趣和现实节奏聊起，再慢慢确认关系理解是否一致。");
   }
 
   if (tips.length === 0) {
-    tips.push("\u5148\u53d1\u4e00\u53e5\u8f7b\u95ee\u5019\uff0c\u4ece\u5b66\u6821\u3001\u5174\u8da3\u6216\u65e5\u5e38\u5f00\u59cb\u5bf9\u8bdd\u3002");
+    tips.push("先发一句轻问候，从学校、兴趣或最近的小日常开始对话会比较稳。");
   }
 
   return tips.slice(0, 4);

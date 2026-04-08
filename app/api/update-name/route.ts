@@ -1,22 +1,41 @@
-import { eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
+﻿import { eq } from "drizzle-orm";
+import {
+  apiSuccess,
+  assertApi,
+  handleApiRouteError,
+  readJsonBody,
+  readPositiveInt,
+  readTrimmedString,
+} from "@/lib/api-route";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { profiles } from "@/lib/schema";
+import { requireAuthenticatedProfile } from "@/lib/server-auth";
+import { postUpdateProfileFieldAuthContext } from "@/lib/update-profile-field-route-core";
 
 export async function POST(request: Request) {
   try {
-    const { userId, newName, mode } = await request.json();
-    const db = getDbForMode(resolveQuizMode(mode));
+    const { body, mode, authenticatedProfile: profile } = await postUpdateProfileFieldAuthContext(request, {
+      readJsonBody,
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
+    const newName = readTrimmedString(body.newName);
 
-    if (!userId || !newName) {
-      return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
-    }
+    assertApi(newName, "缂哄皯蹇呰鍙傛暟", {
+      status: 400,
+      code: "MISSING_NAME",
+    });
 
-    await db.update(profiles).set({ name: newName }).where(eq(profiles.id, userId)).run();
+    const db = getDbForMode(mode);
+    await db.update(profiles).set({ name: newName }).where(eq(profiles.id, Number(profile.id)));
 
-    return NextResponse.json({ success: true, message: "昵称已更新" });
+    return apiSuccess({ message: "鏄电О宸叉洿鏂?" });
   } catch (error) {
-    console.error("Error updating name:", error);
-    return NextResponse.json({ error: "更新失败" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "鏇存柊澶辫触",
+      code: "UPDATE_NAME_FAILED",
+      logMessage: "Error updating name:",
+    });
   }
 }

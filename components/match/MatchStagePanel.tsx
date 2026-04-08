@@ -8,8 +8,10 @@ import { MatchCard } from "@/components/match/MatchCard";
 import { OptedOutStateCard } from "@/components/match/OptedOutStateCard";
 import { RadarStatusCard } from "@/components/match/RadarStatusCard";
 import type { MatchConfirmationStatus, MatchItem } from "@/components/match/types";
+import type { AuthMode } from "@/lib/auth";
 
 type MatchStagePanelProps = {
+  mode: AuthMode;
   radarOn: boolean;
   loading: boolean;
   updatingRadar: boolean;
@@ -34,6 +36,7 @@ type MatchStagePanelProps = {
 };
 
 export function MatchStagePanel({
+  mode,
   radarOn,
   loading,
   updatingRadar,
@@ -99,6 +102,7 @@ export function MatchStagePanel({
           ) : null}
 
           <MatchCard
+            mode={mode}
             match={activeMatch}
             onNext={onNextMatch}
             onPrev={onPrevMatch}

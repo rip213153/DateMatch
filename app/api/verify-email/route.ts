@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { db } from "@/lib/database";
+import { getDbForMode } from "@/lib/database";
 import { emailLoginTokens } from "@/lib/schema";
 import { createSessionToken } from "@/lib/session";
 
@@ -42,6 +42,8 @@ export async function GET(request: Request) {
   try {
     const now = Math.floor(Date.now() / 1000);
     const tokenHash = hashValue(token);
+    const mode = resolveSessionMode(redirect);
+    const db = getDbForMode(mode);
 
     const rows = await db
       .select({ id: emailLoginTokens.id, email: emailLoginTokens.email })
@@ -67,7 +69,7 @@ export async function GET(request: Request) {
       .set({ used_at: now })
       .where(eq(emailLoginTokens.id, row.id));
 
-    const sessionToken = createSessionToken(row.email, resolveSessionMode(redirect));
+    const sessionToken = createSessionToken(row.email, mode);
     const target = new URL(redirect, url.origin);
     const response = NextResponse.redirect(target);
 

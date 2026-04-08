@@ -7,8 +7,8 @@ import {
   readLowercaseEmail,
 } from "@/lib/api-route";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { setSessionCookie } from "@/lib/server-auth";
 import { profiles } from "@/lib/schema";
-import { createSessionToken } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -52,15 +52,7 @@ export async function POST(request: Request) {
       mode: requestedMode,
     });
 
-    response.cookies.set({
-      name: "datematch_session",
-      value: createSessionToken(matched.email, requestedMode),
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 7 * 24 * 60 * 60,
-      path: "/",
-    });
+    setSessionCookie(response, matched.email, requestedMode);
 
     return response;
   } catch (error) {

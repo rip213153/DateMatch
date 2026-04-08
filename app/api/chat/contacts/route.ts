@@ -1,12 +1,14 @@
 import { desc, eq, or } from "drizzle-orm";
-import { NextResponse } from "next/server";
+import { normalizeIdealPreferenceTags } from "@/app/data/idealPreferenceTags";
+import { apiSuccess, handleApiRouteError, readPositiveInt } from "@/lib/api-route";
+import { getChatContactsAuthContext } from "@/lib/chat-contacts-route-core";
 import { normalizeChatRoundKey } from "@/lib/chat-conversations";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { getMatchSchedule } from "@/lib/match-schedule";
 import { buildMutualRoundKey, getMutualPairRowsForUser, getMutualTargetUserId } from "@/lib/mutual-matching";
-import { getProfileRowsForMode } from "@/lib/profile-updates";
-import { normalizeProfiles } from "@/lib/profile-normalizer";
+import { listProfileRowsByIdsForMode, syncProfileUpdateDrafts } from "@/lib/profile-updates";
 import { chatMessages } from "@/lib/schema";
+import { requireAuthenticatedProfile } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -23,15 +25,6 @@ type ContactItem = {
   bio?: string;
   interests?: string | string[];
 };
-
-function toPositiveInt(value: unknown): number | null {
-  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isInteger(parsed) && parsed > 0) return parsed;
-  }
-  return null;
-}
 
 function toIsoString(value: unknown): string | null {
   if (!value) return null;
@@ -55,34 +48,26 @@ function toIsoString(value: unknown): string | null {
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = toPositiveInt(searchParams.get("userId"));
-    const mode = resolveQuizMode(searchParams.get("mode"));
-
-    if (!userId) {
-      return NextResponse.json({ error: "Missing valid userId" }, { status: 400 });
-    }
+    const { mode, authenticatedProfile: profile } = await getChatContactsAuthContext(request, {
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
+    const userId = Number(profile.id);
 
     const db = getDbForMode(mode);
     const now = new Date();
-    const profileRows = await getProfileRowsForMode(mode, now);
-    const allUsers = normalizeProfiles(profileRows);
-    const currentUser = allUsers.find((user) => Number(user.id) === userId);
-
-    if (!currentUser) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
+    await syncProfileUpdateDrafts(mode, now);
 
     const schedule = getMatchSchedule(now);
     const mutualPairRows = schedule.isInDisplayWindow
-      ? await getMutualPairRowsForUser(userId, mode, profileRows, schedule.releaseAt, now)
+      ? await getMutualPairRowsForUser(userId, mode, schedule.releaseAt)
       : [];
     const currentRoundKey = schedule.isInDisplayWindow ? buildMutualRoundKey(mode, schedule.releaseAt) : null;
 
     const pairScoreMap = new Map(
-      mutualPairRows.map((pairRow) => [getMutualTargetUserId(pairRow, userId), Number(pairRow.pair_score)])
+      mutualPairRows.map((pairRow) => [getMutualTargetUserId(pairRow, userId), Number(pairRow.pair_score)]),
     );
-    const userMap = new Map(allUsers.map((user) => [Number(user.id), user]));
 
     const messageRows = await db
       .select({
@@ -102,7 +87,7 @@ export async function GET(request: Request) {
     const historyRoundMap = new Map<number, string | null>();
 
     for (const row of messageRows) {
-      const contactId: number = row.sender_id === userId ? row.receiver_id : row.sender_id;
+      const contactId = row.sender_id === userId ? row.receiver_id : row.sender_id;
       if (contactId === userId) continue;
 
       const messageRoundKey = normalizeChatRoundKey(row.round_key);
@@ -131,6 +116,9 @@ export async function GET(request: Request) {
       }
     }
 
+    const contactProfileRows = await listProfileRowsByIdsForMode(mode, Array.from(visibleContactIds));
+    const userMap = new Map(contactProfileRows.map((user) => [Number(user.id), user]));
+
     const contacts: ContactItem[] = Array.from(visibleContactIds)
       .map((contactId) => {
         const user = userMap.get(contactId);
@@ -148,9 +136,9 @@ export async function GET(request: Request) {
           lastMessageAt: lastMessage?.createdAt ?? null,
           email: user.email,
           ideal_date: user.ideal_date,
-          ideal_date_tags: user.ideal_date_tags,
-          bio: user.bio,
-          interests: user.interests,
+          ideal_date_tags: normalizeIdealPreferenceTags(user.ideal_date_tags),
+          bio: user.bio ?? undefined,
+          interests: user.interests ?? undefined,
           rankScore: pairScore ?? 0,
           isTopMatch: typeof pairScore === "number",
         };
@@ -178,19 +166,21 @@ export async function GET(request: Request) {
         interests: item.interests,
       }));
 
-    return NextResponse.json({
-      success: true,
+    return apiSuccess({
       mode,
       currentUser: {
-        id: currentUser.id,
-        name: currentUser.name,
-        wechatConnected: Boolean(currentUser.wechat_open_id),
-        wechatNoticeOptIn: Boolean(currentUser.wechat_notice_opt_in),
+        id: profile.id,
+        name: profile.name,
+        wechatConnected: Boolean(profile.wechat_open_id),
+        wechatNoticeOptIn: Boolean(profile.wechat_notice_opt_in),
       },
       contacts,
     });
   } catch (error) {
-    console.error("Error fetching chat contacts:", error);
-    return NextResponse.json({ error: "Failed to fetch chat contacts" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "Failed to fetch chat contacts",
+      code: "FETCH_CHAT_CONTACTS_FAILED",
+      logMessage: "Error fetching chat contacts:",
+    });
   }
 }

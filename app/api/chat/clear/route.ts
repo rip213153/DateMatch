@@ -1,14 +1,35 @@
-import { NextResponse } from "next/server";
-import { db } from "@/lib/database";
+import { eq, or } from "drizzle-orm";
+import { apiSuccess, handleApiRouteError, readJsonBody, readPositiveInt } from "@/lib/api-route";
+import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { chatMessages } from "@/lib/schema";
+import { requireAuthenticatedProfile } from "@/lib/server-auth";
 
-export async function POST() {
+export const dynamic = "force-dynamic";
+
+export async function POST(request: Request) {
   try {
-    await db.delete(chatMessages).run();
+    const payload = await readJsonBody(request);
+    const mode = resolveQuizMode(payload?.mode);
+    const requestedUserId = readPositiveInt(payload?.userId);
+    const { profile } = await requireAuthenticatedProfile(request, mode, {
+      claimedUserId: requestedUserId,
+    });
+    const userId = Number(profile.id);
+    const db = getDbForMode(mode);
 
-    return NextResponse.json({ success: true, message: "所有聊天记录已清理" });
+    await db
+      .delete(chatMessages)
+      .where(or(eq(chatMessages.sender_id, userId), eq(chatMessages.receiver_id, userId)));
+
+    return apiSuccess({
+      mode,
+      message: "Cleared the current user's chat history",
+    });
   } catch (error) {
-    console.error("Error clearing chat messages:", error);
-    return NextResponse.json({ error: "清理失败" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "Failed to clear chat history",
+      code: "CLEAR_CHAT_HISTORY_FAILED",
+      logMessage: "Error clearing chat messages:",
+    });
   }
 }

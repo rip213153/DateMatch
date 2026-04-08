@@ -59,7 +59,12 @@ export default function EmailLoginPage() {
       }
 
       const resolvedMode = String(data?.mode || loginMode) === "friendship" ? "friendship" : "romance";
-      await AuthService.loginWithEmail(String(data.email), resolvedMode);
+      const resolvedUserId = Number(data?.userId);
+      await AuthService.loginWithEmail(
+        String(data.email),
+        resolvedMode,
+        Number.isInteger(resolvedUserId) && resolvedUserId > 0 ? resolvedUserId : undefined,
+      );
 
       if (!cancelled) {
         setStatus("success");

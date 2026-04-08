@@ -1,5 +1,7 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import test from "node:test";
+import BetterSqlite3 from "better-sqlite3";
+import { initialSchemaMigration } from "../lib/db/migrations/001-initial-schema.ts";
 import {
   DISPLAY_DAYS,
   getEligibleReleaseAt,
@@ -70,4 +72,35 @@ test("schedule constants keep Friday 18:00 CST release semantics", () => {
   assert.equal(MATCH_DAY, 5);
   assert.equal(MATCH_HOUR, 18);
   assert.equal(MATCH_MINUTE, 0);
+});
+
+test("initial schema migration is idempotent when applied multiple times", () => {
+  const sqlite = new BetterSqlite3(":memory:");
+
+  initialSchemaMigration.apply(sqlite);
+  initialSchemaMigration.apply(sqlite);
+
+  const tables = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name ASC")
+    .all() as Array<{ name: string }>;
+  const tableNames = tables.map((row) => row.name);
+
+  assert.ok(tableNames.includes("profiles"));
+  assert.ok(tableNames.includes("match_pairs"));
+  assert.ok(tableNames.includes("chat_messages"));
+  assert.ok(tableNames.includes("chat_notification_events"));
+
+  const indexes = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'chat_notification_events' ORDER BY name ASC")
+    .all() as Array<{ name: string }>;
+  const indexNames = indexes.map((row) => row.name);
+
+  assert.equal(indexNames.filter((name) => name === "chat_notification_events_receiver_email_status_idx").length, 1);
+
+  const matchPairIndexes = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'match_pairs' ORDER BY name ASC")
+    .all() as Array<{ name: string }>;
+  const matchPairIndexNames = matchPairIndexes.map((row) => row.name);
+
+  assert.equal(matchPairIndexNames.filter((name) => name === "match_pairs_mode_created_idx").length, 1);
 });

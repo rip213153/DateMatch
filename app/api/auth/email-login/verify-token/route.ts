@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import {
   apiSuccess,
   assertApi,
@@ -8,7 +8,8 @@ import {
   readTrimmedString,
 } from "@/lib/api-route";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
-import { emailLoginTokens } from "@/lib/schema";
+import { setSessionCookie } from "@/lib/server-auth";
+import { emailLoginTokens, profiles } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,25 @@ export async function POST(request: Request) {
         .set({ used_at: now })
         .where(eq(emailLoginTokens.id, row.id));
 
-      return apiSuccess({ email: row.email, mode });
+      const profileRows = await db
+        .select({ id: profiles.id, email: profiles.email })
+        .from(profiles)
+        .where(sql`lower(${profiles.email}) = lower(${row.email})`)
+        .limit(1);
+      const profile = profileRows[0] ?? null;
+
+      assertApi(profile, "Profile not found for this login token", {
+        status: 404,
+        code: "PROFILE_NOT_FOUND",
+      });
+
+      const response = apiSuccess({
+        email: profile.email,
+        mode,
+        userId: profile.id,
+      });
+      setSessionCookie(response, profile.email, mode);
+      return response;
     }
 
     return handleApiRouteError(new Error("invalid token"), {

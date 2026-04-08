@@ -4,8 +4,10 @@ import { BellRing, Heart, MapPin } from "lucide-react";
 import { summarizeIdealPreference } from "@/app/data/idealPreferenceTags";
 import type { MatchItem } from "@/components/match/types";
 import { Button } from "@/components/ui/button";
+import type { AuthMode } from "@/lib/auth";
 
 interface MatchCardHeaderSectionProps {
+  mode: AuthMode;
   match: MatchItem;
   activeIndex: number;
   totalMatches: number;
@@ -15,6 +17,7 @@ interface MatchCardHeaderSectionProps {
 }
 
 export function MatchCardHeaderSection({
+  mode,
   match,
   activeIndex,
   totalMatches,
@@ -22,13 +25,16 @@ export function MatchCardHeaderSection({
   onPrev,
   highlights,
 }: MatchCardHeaderSectionProps) {
+  const headerBadge = mode === "friendship" ? "本轮朋友推荐" : "本轮双向推荐";
+  const scoreLabel = mode === "friendship" ? "朋友契合度" : "综合匹配度";
+
   return (
     <>
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <div className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-green-100 bg-green-50 px-3 py-1 text-xs font-bold text-green-600">
             <BellRing className="h-3.5 w-3.5" />
-            本轮双向推荐
+            {headerBadge}
           </div>
           <h2 className="mb-2 flex items-end gap-2 text-2xl font-extrabold text-gray-900">
             {match.user.name}
@@ -51,7 +57,7 @@ export function MatchCardHeaderSection({
               <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="2" strokeDasharray="30 10" />
             </svg>
           </div>
-          <span className="mt-2 text-xs font-bold text-pink-600">综合匹配度</span>
+          <span className="mt-2 text-xs font-bold text-pink-600">{scoreLabel}</span>
         </div>
       </div>
 

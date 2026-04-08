@@ -1,10 +1,23 @@
 import { eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
+import {
+  apiSuccess,
+  assertApi,
+  handleApiRouteError,
+  readJsonBody,
+  readPositiveInt,
+} from "@/lib/api-route";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
 import { getMatchSchedule, isOptedOutForRound } from "@/lib/match-schedule";
+import {
+  getMatchStatusAuthContext,
+  postMatchStatusAuthContext,
+} from "@/lib/match-status-route-core";
 import { profiles } from "@/lib/schema";
+import { requireAuthenticatedProfile } from "@/lib/server-auth";
 
 type MatchingStatus = "WAITING" | "MATCHED" | "VIEWED";
+
+export const dynamic = "force-dynamic";
 
 function buildSchedulePayload(now: Date = new Date()) {
   const schedule = getMatchSchedule(now);
@@ -19,62 +32,57 @@ function buildSchedulePayload(now: Date = new Date()) {
   };
 }
 
-function resolveOptOutUntil(value: number | string | null | undefined): Date | null {
+function resolveOptOutUntil(value: unknown): Date | null {
   if (typeof value === "number") return new Date(value);
   if (typeof value === "string" && value) return new Date(value);
   return null;
 }
 
+function isMatchingStatus(value: unknown): value is MatchingStatus {
+  return value === "WAITING" || value === "MATCHED" || value === "VIEWED";
+}
+
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get("userId");
-    const mode = resolveQuizMode(searchParams.get("mode"));
-    const db = getDbForMode(mode);
+    const { mode, authenticatedProfile: profile } = await getMatchStatusAuthContext(request, {
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
 
-    if (!userId) {
-      return NextResponse.json({ error: "缺少 userId 参数" }, { status: 400 });
-    }
-
-    const user = await db.select().from(profiles).where(eq(profiles.id, Number(userId))).limit(1);
-
-    if (user.length === 0) {
-      return NextResponse.json({ error: "用户不存在" }, { status: 404 });
-    }
-
-    return NextResponse.json({
-      success: true,
+    return apiSuccess({
       mode,
-      matchingStatus: (user[0].matching_status || "WAITING") as MatchingStatus,
-      optOutUntil: user[0].match_opt_out_until ? new Date(user[0].match_opt_out_until).getTime() : null,
-      isOptedOutForRound: isOptedOutForRound(user[0].match_opt_out_until),
+      matchingStatus: (profile.matching_status || "WAITING") as MatchingStatus,
+      optOutUntil: profile.match_opt_out_until ? new Date(profile.match_opt_out_until).getTime() : null,
+      isOptedOutForRound: isOptedOutForRound(profile.match_opt_out_until),
       ...buildSchedulePayload(),
     });
   } catch (error) {
-    console.error("Error getting match status:", error);
-    return NextResponse.json({ error: "获取匹配状态失败" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "Failed to fetch match status",
+      code: "FETCH_MATCH_STATUS_FAILED",
+      logMessage: "Error getting match status:",
+    });
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const data = await request.json();
-    const { userId, status, matchAt, optOutUntil } = data as {
-      userId?: number | string;
-      status?: MatchingStatus;
-      matchAt?: number | string | null;
-      optOutUntil?: number | string | null;
-    };
-    const mode = resolveQuizMode(data?.mode);
-    const db = getDbForMode(mode);
+    const { data, mode, authenticatedProfile: profile } = await postMatchStatusAuthContext(request, {
+      readJsonBody,
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
+    const status = data.status;
+    const matchAt = data.matchAt;
+    const optOutUntil = data.optOutUntil;
+    const userId = Number(profile.id);
 
-    if (!userId) {
-      return NextResponse.json({ error: "缺少 userId 参数" }, { status: 400 });
-    }
-
-    if (!status || !["WAITING", "MATCHED", "VIEWED"].includes(status)) {
-      return NextResponse.json({ error: "无效的 matching_status" }, { status: 400 });
-    }
+    assertApi(isMatchingStatus(status), "Invalid matching status", {
+      status: 400,
+      code: "INVALID_MATCHING_STATUS",
+    });
 
     const schedule = getMatchSchedule();
     const resolvedMatchAt =
@@ -85,6 +93,7 @@ export async function POST(request: Request) {
           : new Date(schedule.releaseAt);
     const resolvedOptOutUntil = resolveOptOutUntil(optOutUntil);
 
+    const db = getDbForMode(mode);
     await db
       .update(profiles)
       .set({
@@ -92,10 +101,9 @@ export async function POST(request: Request) {
         match_at: resolvedMatchAt,
         match_opt_out_until: resolvedOptOutUntil,
       })
-      .where(eq(profiles.id, Number(userId)));
+      .where(eq(profiles.id, userId));
 
-    return NextResponse.json({
-      success: true,
+    return apiSuccess({
       mode,
       matchingStatus: status,
       optOutUntil: resolvedOptOutUntil ? resolvedOptOutUntil.getTime() : null,
@@ -103,7 +111,10 @@ export async function POST(request: Request) {
       ...buildSchedulePayload(),
     });
   } catch (error) {
-    console.error("Error updating match status:", error);
-    return NextResponse.json({ error: "更新匹配状态失败" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "Failed to update match status",
+      code: "UPDATE_MATCH_STATUS_FAILED",
+      logMessage: "Error updating match status:",
+    });
   }
 }

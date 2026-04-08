@@ -6,7 +6,7 @@ const SECRET =
   process.env.NEXTAUTH_SECRET ||
   "datematch-dev-session-secret-change-me";
 
-type SessionPayload = {
+export type SessionPayload = {
   email: string;
   mode: "romance" | "friendship";
   exp: number;

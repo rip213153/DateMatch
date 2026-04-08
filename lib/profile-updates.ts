@@ -1,4 +1,4 @@
-import { and, eq, lte } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import type { QuizMode } from "@/app/data/types";
 import { serializeIdealPreferenceTags } from "@/app/data/idealPreferenceTags";
 import { getDbForMode } from "@/lib/database";
@@ -25,6 +25,7 @@ type DeferredProfileUpdate = Partial<
 
 type ProfileRow = typeof profiles.$inferSelect;
 type DraftRow = typeof profileUpdateDrafts.$inferSelect;
+const ALL_QUIZ_MODES: QuizMode[] = ["romance", "friendship"];
 
 function normalizeString(value: unknown) {
   return String(value ?? "").trim();
@@ -158,14 +159,58 @@ export async function syncProfileUpdateDrafts(mode: QuizMode, now: Date = new Da
   }
 }
 
-export async function getProfileRowsForMode(mode: QuizMode, now: Date = new Date()) {
-  await syncProfileUpdateDrafts(mode, now);
+export async function syncProfileUpdateDraftsForAllModes(now: Date = new Date()) {
+  for (const mode of ALL_QUIZ_MODES) {
+    await syncProfileUpdateDrafts(mode, now);
+  }
+}
+
+export async function listAllProfilesForMode(mode: QuizMode) {
   return getDbForMode(mode).select().from(profiles);
 }
 
-export async function getProfileWithPendingDraft(userId: number, mode: QuizMode, now: Date = new Date()) {
+export async function getProfileRowByIdForMode(
+  mode: QuizMode,
+  userId: number,
+) {
   const db = getDbForMode(mode);
-  await syncProfileUpdateDrafts(mode, now);
+
+  const [profileRow] = await db.select().from(profiles).where(eq(profiles.id, userId)).limit(1);
+  return profileRow ?? null;
+}
+
+export async function listProfileRowsByIdsForMode(
+  mode: QuizMode,
+  userIds: number[],
+) {
+  const ids = Array.from(new Set(userIds.filter((id) => Number.isInteger(id) && id > 0)));
+  if (!ids.length) {
+    return [] as ProfileRow[];
+  }
+
+  const db = getDbForMode(mode);
+  return db.select().from(profiles).where(inArray(profiles.id, ids));
+}
+
+export async function listEligibleProfileRowsForRound(
+  mode: QuizMode,
+  releaseAt: number,
+  now: Date = new Date(),
+) {
+  const db = getDbForMode(mode);
+  return db
+    .select()
+    .from(profiles)
+    .where(
+      and(
+        or(isNull(profiles.match_opt_out_until), lte(profiles.match_opt_out_until, now)),
+        or(isNull(profiles.eligible_release_at), lte(profiles.eligible_release_at, new Date(releaseAt))),
+      ),
+    );
+}
+
+export async function getProfileWithPendingDraft(userId: number, mode: QuizMode) {
+  const db = getDbForMode(mode);
 
   const [profileRow] = await db.select().from(profiles).where(eq(profiles.id, userId)).limit(1);
   if (!profileRow) {
@@ -192,8 +237,9 @@ export async function saveProfileUpdates(
   now: Date = new Date()
 ) {
   const db = getDbForMode(mode);
+  await syncProfileUpdateDrafts(mode, now);
   const schedule = getMatchSchedule(now);
-  const current = await getProfileWithPendingDraft(userId, mode, now);
+  const current = await getProfileWithPendingDraft(userId, mode);
 
   if (!current) {
     throw new Error("PROFILE_NOT_FOUND");

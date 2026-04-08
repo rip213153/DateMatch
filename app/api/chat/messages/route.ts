@@ -7,11 +7,16 @@ import {
   readPositiveInt,
   readTrimmedString,
 } from "@/lib/api-route";
+import {
+  getChatMessagesAuthContext,
+  postChatMessagesAuthContext,
+} from "@/lib/chat-messages-route-core";
 import { buildChatConversationCondition, resolveChatConversationScope } from "@/lib/chat-conversations";
 import { createChatNotificationEvent } from "@/lib/chat-notification-events";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
-import { getProfileRowsForMode } from "@/lib/profile-updates";
+import { getProfileRowByIdForMode, syncProfileUpdateDrafts } from "@/lib/profile-updates";
 import { chatMessages } from "@/lib/schema";
+import { requireAuthenticatedProfile } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -77,37 +82,33 @@ function countSenderMessagesSinceLastReply(
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = readPositiveInt(searchParams.get("userId"));
-    const targetUserId = readPositiveInt(searchParams.get("targetUserId"));
-    const mode = resolveQuizMode(searchParams.get("mode"));
+    const { mode, targetUserId, authenticatedProfile: profile } = await getChatMessagesAuthContext(request, {
+      readPositiveInt,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
+    const userId = Number(profile.id);
 
-    assertApi(userId && targetUserId, "Missing valid userId or targetUserId", {
+    assertApi(targetUserId, "Missing valid targetUserId", {
       status: 400,
-      code: "INVALID_CHAT_USER_IDS",
+      code: "INVALID_CHAT_TARGET_USER_ID",
     });
 
     const now = new Date();
-    const profileRows = await getProfileRowsForMode(mode, now);
+    await syncProfileUpdateDrafts(mode, now);
+    const receiverProfile = await getProfileRowByIdForMode(mode, targetUserId);
 
-    const senderExists = profileRows.some((row) => Number(row.id) === userId);
-    const receiverExists = profileRows.some((row) => Number(row.id) === targetUserId);
-
-    assertApi(senderExists && receiverExists, "Chat user not found", {
+    assertApi(receiverProfile, "Chat user not found", {
       status: 404,
       code: "CHAT_USER_NOT_FOUND",
     });
 
-    const conversation = await resolveChatConversationScope(mode, userId, targetUserId, profileRows, now);
+    const conversation = await resolveChatConversationScope(mode, userId, targetUserId, now);
 
-    assertApi(
-      Boolean(conversation.source),
-      "You can only access chats from your current mutual recommendations.",
-      {
-        status: 403,
-        code: "CHAT_ACCESS_DENIED",
-      }
-    );
+    assertApi(Boolean(conversation.source), "You can only access chats from your current mutual recommendations.", {
+      status: 403,
+      code: "CHAT_ACCESS_DENIED",
+    });
 
     const rows = await getPairRows(mode, userId, targetUserId, conversation.roundKey);
 
@@ -132,15 +133,18 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = await readJsonBody(request);
-    const senderId = readPositiveInt(body.senderId);
-    const receiverId = readPositiveInt(body.receiverId);
-    const content = readTrimmedString(body.content);
-    const mode = resolveQuizMode(body.mode);
+    const { mode, receiverId, content, authenticatedProfile: profile } = await postChatMessagesAuthContext(request, {
+      readJsonBody,
+      readPositiveInt,
+      readTrimmedString,
+      resolveQuizMode,
+      requireAuthenticatedProfile,
+    });
+    const senderId = Number(profile.id);
 
-    assertApi(senderId && receiverId, "Missing valid senderId or receiverId", {
+    assertApi(receiverId, "Missing valid receiverId", {
       status: 400,
-      code: "INVALID_CHAT_USER_IDS",
+      code: "INVALID_CHAT_RECEIVER_ID",
     });
     assertApi(senderId !== receiverId, "Cannot send messages to yourself", {
       status: 400,
@@ -156,18 +160,16 @@ export async function POST(request: Request) {
     });
 
     const now = new Date();
+    await syncProfileUpdateDrafts(mode, now);
     const db = getDbForMode(mode);
-    const profileRows = await getProfileRowsForMode(mode, now);
+    const receiverProfile = await getProfileRowByIdForMode(mode, receiverId);
 
-    const senderExists = profileRows.some((row) => Number(row.id) === senderId);
-    const receiverExists = profileRows.some((row) => Number(row.id) === receiverId);
-
-    assertApi(senderExists && receiverExists, "Chat user not found", {
+    assertApi(receiverProfile, "Chat user not found", {
       status: 404,
       code: "CHAT_USER_NOT_FOUND",
     });
 
-    const conversation = await resolveChatConversationScope(mode, senderId, receiverId, profileRows, now);
+    const conversation = await resolveChatConversationScope(mode, senderId, receiverId, now);
 
     assertApi(Boolean(conversation.source), "The other user is not currently in your mutual recommendations.", {
       status: 403,

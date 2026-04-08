@@ -6,65 +6,43 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ArrowLeft, Heart, Sparkles, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { getRandomFriendshipQuestions } from "@/app/data/friendshipQuestionBank";
-import { getRandomQuestions } from "@/app/data/questionBank";
 import {
-  type Answer,
-  type FriendshipAnswer,
-  type FriendshipQuestion,
-  type FriendshipTraits,
-  type PersonalityTraits,
-  type Question,
+  type FriendshipAnswerV2,
+  type FriendshipQuestionV2,
+  type FriendshipTraitsV2,
   type QuizMode,
+  type RomanceAnswerV2,
+  type RomanceQuestionV2,
+  type RomanceTraitsV2,
 } from "@/app/data/types";
+import {
+  FRIENDSHIP_V2_DEFAULT_PROFILE,
+  FRIENDSHIP_V2_TRAIT_KEYS,
+} from "@/app/data/friendshipQuestionBankV2";
+import {
+  ROMANCE_V2_DEFAULT_PROFILE,
+  ROMANCE_V2_TRAIT_KEYS,
+} from "@/app/data/questionBankV2";
 
-const ROMANCE_DEFAULT_PROFILE: PersonalityTraits = {
-  socialStyle: 5,
-  emotionalReadiness: 5,
-  dateStyle: 5,
-  commitment: 5,
-  communication: 5,
-  independence: 5,
-  career: 5,
-  flexibility: 5,
+type AnyQuestion = RomanceQuestionV2 | FriendshipQuestionV2;
+type AnyAnswer = RomanceAnswerV2 | FriendshipAnswerV2;
+type AnyProfile = RomanceTraitsV2 | FriendshipTraitsV2;
+
+type QuizConfig = {
+  mode: QuizMode;
+  badge: string;
+  title: string;
+  subtitle: string;
+  icon: ReactNode;
+  iconWrapClassName: string;
+  progressClassName: string;
+  progressIndicatorClassName: string;
+  questionCount: number;
+  completeTitle: string;
+  completeDescription: string;
+  ctaText: string;
+  emptyTitle: string;
 };
-
-const FRIENDSHIP_DEFAULT_PROFILE: FriendshipTraits = {
-  socialEnergy: 5,
-  maintenance: 5,
-  boundaries: 5,
-  spontaneity: 5,
-  empathy: 5,
-  reliability: 5,
-  depth: 5,
-  openness: 5,
-};
-
-const ROMANCE_TRAIT_KEYS: Array<keyof PersonalityTraits> = [
-  "socialStyle",
-  "emotionalReadiness",
-  "dateStyle",
-  "commitment",
-  "communication",
-  "independence",
-  "career",
-  "flexibility",
-];
-
-const FRIENDSHIP_TRAIT_KEYS: Array<keyof FriendshipTraits> = [
-  "socialEnergy",
-  "maintenance",
-  "boundaries",
-  "spontaneity",
-  "empathy",
-  "reliability",
-  "depth",
-  "openness",
-];
-
-type AnyQuestion = Question | FriendshipQuestion;
-type AnyAnswer = Answer | FriendshipAnswer;
-type AnyProfile = PersonalityTraits | FriendshipTraits;
 
 function renderQuestionIcon(icon: unknown): ReactNode {
   if (isValidElement(icon)) return icon;
@@ -100,10 +78,20 @@ function detectQuizMode(value: string | null): QuizMode {
   return value === "friendship" ? "friendship" : "romance";
 }
 
+async function loadQuestionsForMode(mode: QuizMode, count: number): Promise<AnyQuestion[]> {
+  if (mode === "friendship") {
+    const questionBankModule = await import("@/app/data/friendshipQuestionBankV2");
+    return questionBankModule.getRandomFriendshipQuestionsV2(count) as AnyQuestion[];
+  }
+
+  const questionBankModule = await import("@/app/data/questionBankV2");
+  return questionBankModule.getRandomRomanceQuestionsV2(count) as AnyQuestion[];
+}
+
 function calculateAverageProfile(
   answers: Array<{ traits: Record<string, number | undefined> }>,
   initialProfile: Record<string, number>,
-  traitKeys: string[]
+  traitKeys: string[],
 ) {
   const traitCounts = traitKeys.reduce<Record<string, number>>((acc, key) => {
     acc[key] = 0;
@@ -119,6 +107,7 @@ function calculateAverageProfile(
       acc[trait] += Number(value ?? 0);
       traitCounts[trait] += 1;
     });
+
     return acc;
   }, { ...initialProfile });
 
@@ -131,10 +120,50 @@ function calculateAverageProfile(
   return profile;
 }
 
+function getQuizConfig(mode: QuizMode): QuizConfig {
+  if (mode === "friendship") {
+    return {
+      mode,
+      badge: "FRIENDSHIP QUIZ",
+      title: "测测你的友情连接方式",
+      subtitle: "看看你更适合高频热闹局，还是边界清晰、默契稳定的长期搭子。",
+      icon: <Users className="h-6 w-6" />,
+      iconWrapClassName: "border-sky-100 bg-white/85 text-sky-500",
+      progressClassName: "bg-sky-100/70",
+      progressIndicatorClassName: "bg-gradient-to-r from-sky-500 to-cyan-500 duration-500",
+      questionCount: 10,
+      completeTitle: "友情档案已生成",
+      completeDescription: "你的社交能量、边界感和搭子默契已经分析完成。",
+      ctaText: "查看友情分析",
+      emptyTitle: "题目加载异常",
+    };
+  }
+
+  return {
+    mode,
+    badge: "PERSONALITY QUIZ",
+    title: "找到你的恋爱人格节奏",
+    subtitle: "从依恋方式到沟通偏好，看看你在亲密关系里最有魅力的样子。",
+    icon: <Heart className="h-6 w-6" fill="currentColor" />,
+    iconWrapClassName: "border-pink-100 bg-white/85 text-pink-500",
+    progressClassName: "bg-pink-100/70",
+    progressIndicatorClassName: "bg-gradient-to-r from-pink-500 to-purple-600 duration-500",
+    questionCount: 20,
+    completeTitle: "恋爱档案已生成",
+    completeDescription: "你的灵魂匹配档案已经生成，准备好看看谁会和你更同频了吗？",
+    ctaText: "查看匹配分析",
+    emptyTitle: "题目加载异常",
+  };
+}
+
 function QuizContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const mode = detectQuizMode(searchParams.get("mode"));
+  const quizConfig = useMemo(() => getQuizConfig(mode), [mode]);
+
+  const [questions, setQuestions] = useState<AnyQuestion[]>([]);
+  const [isLoadingQuestions, setIsLoadingQuestions] = useState(true);
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<AnyAnswer[]>([]);
   const [isCompletedModalOpen, setIsCompletedModalOpen] = useState(false);
@@ -143,43 +172,6 @@ function QuizContent() {
   const [isAdvancing, setIsAdvancing] = useState(false);
   const advanceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const quizConfig = useMemo(
-    () =>
-      mode === "friendship"
-        ? {
-            mode,
-            badge: "FRIENDSHIP QUIZ",
-            title: "测测你的友情连接方式",
-            subtitle: "看看你更适合高频热闹局，还是边界感清晰的长期搭子。",
-            icon: <Users className="h-6 w-6" />,
-            iconWrapClassName: "border-sky-100 bg-white/85 text-sky-500",
-            progressClassName: "bg-sky-100/70",
-            progressIndicatorClassName: "bg-gradient-to-r from-sky-500 to-cyan-500 duration-500",
-            questions: getRandomFriendshipQuestions(10) as AnyQuestion[],
-            completeTitle: "友情档案已生成",
-            completeDescription: "你的社交电量、边界感和搭子默契已经分析完成。",
-            ctaText: "查看友情分析",
-            emptyTitle: "题目加载异常",
-          }
-        : {
-            mode,
-            badge: "PERSONALITY QUIZ",
-            title: "找到你的恋爱人格节奏",
-            subtitle: "从依恋方式到沟通偏好，看看你在亲密关系里最有魅力的样子。",
-            icon: <Heart className="h-6 w-6" fill="currentColor" />,
-            iconWrapClassName: "border-pink-100 bg-white/85 text-pink-500",
-            progressClassName: "bg-pink-100/70",
-            progressIndicatorClassName: "bg-gradient-to-r from-pink-500 to-purple-600 duration-500",
-            questions: getRandomQuestions(20) as AnyQuestion[],
-            completeTitle: "恋爱档案已生成",
-            completeDescription: "你的灵魂匹配档案已经生成，准备好看看谁会和你更同频了吗？",
-            ctaText: "查看匹配分析",
-            emptyTitle: "题目加载异常",
-          },
-    [mode]
-  );
-
-  const questions = quizConfig.questions;
   const totalQuestions = Math.max(questions.length, 1);
   const progress = questions.length ? ((currentQuestion + 1) / totalQuestions) * 100 : 0;
   const activeQuestion = questions[currentQuestion];
@@ -196,6 +188,46 @@ function QuizContent() {
   useEffect(() => {
     router.prefetch(resultsHref);
   }, [resultsHref, router]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (advanceTimerRef.current) {
+      clearTimeout(advanceTimerRef.current);
+      advanceTimerRef.current = null;
+    }
+
+    setQuestions([]);
+    setIsLoadingQuestions(true);
+    setCurrentQuestion(0);
+    setAnswers([]);
+    setIsCompletedModalOpen(false);
+    setCompletedProfile(null);
+    setSelectedAnswerIndex(null);
+    setIsAdvancing(false);
+
+    async function hydrateQuestions() {
+      try {
+        const nextQuestions = await loadQuestionsForMode(mode, quizConfig.questionCount);
+        if (cancelled) return;
+        setQuestions(nextQuestions);
+      } catch (error) {
+        console.error(`Failed to load ${mode} quiz questions:`, error);
+        if (cancelled) return;
+        setQuestions([]);
+      } finally {
+        if (!cancelled) {
+          setIsLoadingQuestions(false);
+        }
+      }
+    }
+
+    void hydrateQuestions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, quizConfig.questionCount]);
 
   const goToResults = (profile: AnyProfile) => {
     router.replace(`/results?mode=${mode}&profile=${encodeURIComponent(JSON.stringify(profile))}`);
@@ -227,14 +259,14 @@ function QuizContent() {
         mode === "friendship"
           ? (calculateAverageProfile(
               nextAnswers as Array<{ traits: Record<string, number | undefined> }>,
-              FRIENDSHIP_DEFAULT_PROFILE as unknown as Record<string, number>,
-              FRIENDSHIP_TRAIT_KEYS as string[]
-            ) as unknown as FriendshipTraits)
+              FRIENDSHIP_V2_DEFAULT_PROFILE as unknown as Record<string, number>,
+              FRIENDSHIP_V2_TRAIT_KEYS as string[],
+            ) as unknown as FriendshipTraitsV2)
           : (calculateAverageProfile(
               nextAnswers as Array<{ traits: Record<string, number | undefined> }>,
-              ROMANCE_DEFAULT_PROFILE as unknown as Record<string, number>,
-              ROMANCE_TRAIT_KEYS as string[]
-            ) as unknown as PersonalityTraits);
+              ROMANCE_V2_DEFAULT_PROFILE as unknown as Record<string, number>,
+              ROMANCE_V2_TRAIT_KEYS as string[],
+            ) as unknown as RomanceTraitsV2);
 
       setCompletedProfile(profile);
       setIsCompletedModalOpen(true);
@@ -245,10 +277,12 @@ function QuizContent() {
 
   const handlePrevious = () => {
     if (currentQuestion === 0 || isCompletedModalOpen || isAdvancing) return;
+
     if (advanceTimerRef.current) {
       clearTimeout(advanceTimerRef.current);
       advanceTimerRef.current = null;
     }
+
     setSelectedAnswerIndex(null);
     setIsAdvancing(false);
     setAnswers((prev) => prev.slice(0, -1));
@@ -266,6 +300,21 @@ function QuizContent() {
     return activeQuestion.text;
   }, [activeQuestion, quizConfig.emptyTitle]);
 
+  if (isLoadingQuestions) {
+    return (
+      <div className="relative flex min-h-screen items-center justify-center px-3 py-8 sm:px-4 sm:py-12">
+        <BackgroundEffects />
+        <div className="relative z-10 w-full max-w-md rounded-[2rem] border border-white/70 bg-white/60 p-8 text-center shadow-xl backdrop-blur-xl">
+          <div className={`mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm ${quizConfig.iconWrapClassName}`}>
+            {quizConfig.icon}
+          </div>
+          <h2 className="mb-2 text-xl font-bold text-gray-800">正在加载题目...</h2>
+          <p className="text-sm leading-relaxed text-gray-500">我们只会加载当前模式需要的题库，马上就好。</p>
+        </div>
+      </div>
+    );
+  }
+
   if (questions.length === 0 || !activeQuestion) {
     return (
       <div className="relative flex min-h-screen items-center justify-center px-3 py-8 sm:px-4 sm:py-12">
@@ -274,18 +323,14 @@ function QuizContent() {
           <div className={`mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm ${quizConfig.iconWrapClassName}`}>
             {quizConfig.icon}
           </div>
-          <h2 className="mb-2 text-xl font-bold text-gray-800">{questions.length === 0 ? "加载中..." : quizConfig.emptyTitle}</h2>
-          {questions.length > 0 ? (
-            <>
-              <p className="text-sm leading-relaxed text-gray-500">当前题目未成功生成，请返回首页后重新开始测试。</p>
-              <Button
-                onClick={() => router.push("/")}
-                className="mt-6 w-full rounded-full bg-gradient-to-r from-pink-500 to-purple-600 shadow-lg shadow-pink-500/20 hover:from-pink-600 hover:to-purple-700"
-              >
-                返回首页
-              </Button>
-            </>
-          ) : null}
+          <h2 className="mb-2 text-xl font-bold text-gray-800">{quizConfig.emptyTitle}</h2>
+          <p className="text-sm leading-relaxed text-gray-500">当前题目未能成功生成，请返回首页后重新开始测试。</p>
+          <Button
+            onClick={() => router.push("/")}
+            className="mt-6 w-full rounded-full bg-gradient-to-r from-pink-500 to-purple-600 shadow-lg shadow-pink-500/20 hover:from-pink-600 hover:to-purple-700"
+          >
+            返回首页
+          </Button>
         </div>
       </div>
     );
@@ -308,8 +353,10 @@ function QuizContent() {
             disabled={currentQuestion === 0}
             className="rounded-full bg-white/80 text-gray-700 shadow-sm backdrop-blur-md disabled:opacity-40"
           >
-            <ArrowLeft className="mr-2 h-4 w-4" /> 上一题
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            上一题
           </Button>
+
           <div className="rounded-full border border-white/70 bg-white/70 px-4 py-1.5 text-sm font-semibold text-gray-500 shadow-sm backdrop-blur-md">
             第 {currentQuestion + 1} / {questions.length} 题
           </div>
@@ -325,6 +372,7 @@ function QuizContent() {
               <div className={`flex h-16 w-16 items-center justify-center rounded-2xl border shadow-sm ${quizConfig.iconWrapClassName}`}>
                 {renderQuestionIcon(activeQuestion.icon)}
               </div>
+
               <div>
                 <p className="text-sm font-semibold tracking-[0.18em] text-pink-500">{quizConfig.badge}</p>
                 <h1 className="mt-1 text-lg font-bold text-gray-900 sm:text-xl">{quizConfig.title}</h1>
@@ -366,7 +414,7 @@ function QuizContent() {
                         disabled={isAdvancing}
                         className={`group w-full rounded-[1.35rem] border px-6 py-5 text-left text-[15px] leading-relaxed shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-200 ease-out focus:outline-none focus:ring-4 focus:ring-pink-500/10 sm:text-base ${
                           selectedAnswerIndex === index
-                            ? "border-pink-300 bg-pink-50/90 text-gray-900 shadow-[0_18px_40px_rgba(236,72,153,0.14)] scale-[1.01]"
+                            ? "scale-[1.01] border-pink-300 bg-pink-50/90 text-gray-900 shadow-[0_18px_40px_rgba(236,72,153,0.14)]"
                             : isAdvancing
                               ? "border-gray-100 bg-white/85 text-gray-400 opacity-75"
                               : "border-gray-100 bg-white text-gray-700 hover:-translate-y-0.5 hover:border-pink-200 hover:bg-pink-50/40 hover:text-gray-900 hover:shadow-[0_16px_36px_rgba(236,72,153,0.10)] active:scale-[0.985] active:bg-pink-50"
@@ -401,13 +449,16 @@ function QuizContent() {
               transition={{ type: "spring", bounce: 0.3, duration: 0.6 }}
               className="w-full max-w-sm rounded-[2rem] border border-white/80 bg-white/95 p-8 text-center shadow-2xl backdrop-blur-xl"
             >
-              <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-pink-100 to-purple-100 text-pink-500 shadow-sm`}>
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-pink-100 to-purple-100 text-pink-500 shadow-sm">
                 {quizConfig.mode === "friendship" ? <Users className="h-8 w-8" /> : <Sparkles className="h-8 w-8" />}
               </div>
+
               <h3 id="quiz-complete-title" className="mb-3 text-2xl font-bold text-gray-900">
                 {quizConfig.completeTitle}
               </h3>
+
               <p className="mb-8 text-sm leading-relaxed text-gray-500">{quizConfig.completeDescription}</p>
+
               <Button
                 className="w-full rounded-full bg-gradient-to-r from-pink-500 to-purple-600 py-6 text-base font-semibold shadow-lg shadow-pink-500/20 transition-all hover:-translate-y-0.5 hover:from-pink-600 hover:to-purple-700"
                 onClick={handleViewResults}
@@ -427,7 +478,7 @@ export default function Quiz() {
     <Suspense
       fallback={
         <div className="flex min-h-screen items-center justify-center">
-          <div className="text-lg text-gray-600">加载中...</div>
+          <div className="text-lg text-gray-600">正在加载...</div>
         </div>
       }
     >
