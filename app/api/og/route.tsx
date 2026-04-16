@@ -2,14 +2,7 @@
 import { NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
-export const runtime = "edge";
-
-const notoSansScRegular = fetch(new URL("../../fonts/NotoSansSC-Regular.otf", import.meta.url)).then((response) =>
-  response.arrayBuffer(),
-);
-const notoSansScBold = fetch(new URL("../../fonts/NotoSansSC-Bold.otf", import.meta.url)).then((response) =>
-  response.arrayBuffer(),
-);
+export const runtime = "nodejs";
 
 const RESULT_QR_TARGET = "http://39.107.110.145:3000/";
 const RESULT_QR_IMAGE = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=16&data=${encodeURIComponent(RESULT_QR_TARGET)}`;
@@ -153,28 +146,7 @@ function getSummary(value: number, label: string) {
   return `${label}维度还有提升空间`;
 }
 
-async function getOgFonts() {
-  const [regular, bold] = await Promise.all([notoSansScRegular, notoSansScBold]);
-
-  return [
-    {
-      name: "Noto Sans SC",
-      data: regular,
-      style: "normal" as const,
-      weight: 400 as const,
-    },
-    {
-      name: "Noto Sans SC",
-      data: bold,
-      style: "normal" as const,
-      weight: 700 as const,
-    },
-  ];
-}
-
 async function renderDefaultImage(title: string, description: string) {
-  const fonts = await getOgFonts();
-
   return new ImageResponse(
     (
       <div
@@ -189,7 +161,6 @@ async function renderDefaultImage(title: string, description: string) {
           padding: "48px",
           position: "relative",
           overflow: "hidden",
-          fontFamily: '"Noto Sans SC"',
         }}
       >
         <div
@@ -254,7 +225,6 @@ async function renderDefaultImage(title: string, description: string) {
     {
       width: 1200,
       height: 630,
-      fonts,
     },
   );
 }
@@ -310,7 +280,6 @@ async function renderResultsImage(
   adviceTitle: string,
   adviceBody: string,
 ) {
-  const fonts = await getOgFonts();
   const rows = [traitMeta.slice(0, 2), traitMeta.slice(2, 4), traitMeta.slice(4, 6), traitMeta.slice(6, 8)];
 
   return new ImageResponse(
@@ -325,7 +294,6 @@ async function renderResultsImage(
           background: "linear-gradient(135deg, #fff1f2 0%, #fdf2f8 46%, #eef6ff 100%)",
           padding: "36px",
           color: "#111827",
-          fontFamily: '"Noto Sans SC"',
         }}
       >
         <div
@@ -447,7 +415,6 @@ async function renderResultsImage(
     {
       width: 1080,
       height: 1440,
-      fonts,
     },
   );
 }
