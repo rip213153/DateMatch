@@ -1,36 +1,112 @@
-# match
+# DateMatch
 
-#### Description
-{**When you're done, you can delete the content in this README and update the file with details for others getting started with your repository**}
+DateMatch is a live campus matching product with two modes: romance matching and friendship matching. The project has a real online version and continues to evolve across questionnaires, profile submission, scheduled match releases, mutual confirmation, chat, email and WeChat notifications, and ops tooling.
 
-#### Software Architecture
-Software architecture description
+## Live Status
 
-#### Installation
+This repository is not just a static demo or a portfolio mockup.
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+- It backs a real, publicly accessible product
+- The online version is actively maintained and iterated
+- A public `Live Site` link can be added here later if needed
 
-#### Instructions
+## Highlights
 
-1.  xxxx
-2.  xxxx
-3.  xxxx
+- Dual-mode matching for `romance` and `friendship`
+- Scheduled match releases with round and display-window rules
+- End-to-end user flow from onboarding to matching, confirmation, and chat
+- Server-side session checks on core APIs instead of front-end-only state
+- Ops support for announcements, feedback, notifications, and background workers
 
-#### Contribution
+## Why This Project Matters
 
-1.  Fork the repository
-2.  Create Feat_xxx branch
-3.  Commit your code
-4.  Create Pull Request
+DateMatch is not a single-page showcase. It is a real product with a full workflow that combines:
 
+- user-facing pages and interactions
+- server routes and business logic
+- notifications through email and WeChat
+- ops-facing tooling and maintenance docs
 
-#### Gitee Feature
+If you want to study how a compact but real full-stack product is put together, this repo is designed to be useful.
 
-1.  You can use Readme\_XXX.md to support different languages, such as Readme\_en.md, Readme\_zh.md
-2.  Gitee blog [blog.gitee.com](https://blog.gitee.com)
-3.  Explore open source project [https://gitee.com/explore](https://gitee.com/explore)
-4.  The most valuable open source project [GVP](https://gitee.com/gvp)
-5.  The manual of Gitee [https://gitee.com/help](https://gitee.com/help)
-6.  The most popular members  [https://gitee.com/gitee-stars/](https://gitee.com/gitee-stars/)
+## Core Capabilities
+
+- Romance and friendship matching run in parallel with isolated databases
+- Match results are released on a schedule instead of appearing instantly
+- Some profile fields update immediately while others take effect in the next round
+- Chat opens after mutual confirmation
+- Email and WeChat notifications support reminders and operational workflows
+- An ops dashboard supports announcements, overview, and feedback handling
+
+## Tech Stack
+
+- Next.js 14 App Router
+- React 18
+- Tailwind CSS
+- Radix UI
+- Framer Motion
+- SQLite with `better-sqlite3`
+- Drizzle ORM
+- Nodemailer and SMTP
+
+## Local Development
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Create `.env.local`
+
+Minimum local setup:
+
+```bash
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+APP_URL=http://localhost:3000
+AUTH_SESSION_SECRET=replace-with-a-long-random-string
+OPS_DASHBOARD_TOKEN=replace-with-a-secure-token
+```
+
+For email delivery, see:
+
+- [SMTP_EMAIL.md](/E:/code/datematch-main/SMTP_EMAIL.md)
+
+### 3. Start the app
+
+```bash
+npm run dev
+```
+
+On Windows, a background start option is also available:
+
+```bash
+npm run dev:hidden
+```
+
+### 4. Common checks
+
+```bash
+npm run typecheck
+npm test
+npm run build
+```
+
+## Docs
+
+- [docs/ARCHITECTURE.md](/E:/code/datematch-main/docs/ARCHITECTURE.md)
+- [SMTP_EMAIL.md](/E:/code/datematch-main/SMTP_EMAIL.md)
+- [docs/product-mechanism.md](/E:/code/datematch-main/docs/product-mechanism.md)
+- [docs/knowledge-base/README.md](/E:/code/datematch-main/docs/knowledge-base/README.md)
+
+## Open-Source Boundary
+
+This repo reflects the core implementation of a live product, but it does not include everything needed to mirror production exactly.
+
+- private credentials are intentionally excluded
+- email, WeChat, and ops features depend on environment-specific configuration
+- the codebase is useful for understanding the implementation, but it is not a one-click clone of the full production environment
+
+## Suggested GitHub Description
+
+`A live campus matching platform with romance and friendship modes, timed releases, chat, notifications, and ops tooling.`

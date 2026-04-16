@@ -47,3 +47,14 @@ next-env.d.ts
 /backups/
 /tmp_head_*.txt
 /tmp/
+/tmp_start*.txt
+/tmp_write_test*.txt
+/_p*.html
+/dump.rdb
+/tmp/feedback/
+
+# local dev logs
+/.codex-dev.log
+/datematch*.log
+/*.out.log
+/*.err.log
