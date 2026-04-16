@@ -19,7 +19,6 @@ type ContactItem = {
   university: string;
   lastMessage: string | null;
   lastMessageAt: string | null;
-  email: string;
   ideal_date: string;
   ideal_date_tags?: string[];
   bio?: string;
@@ -134,7 +133,6 @@ export async function GET(request: Request) {
           university: user.university,
           lastMessage: lastMessage?.content ?? null,
           lastMessageAt: lastMessage?.createdAt ?? null,
-          email: user.email,
           ideal_date: user.ideal_date,
           ideal_date_tags: normalizeIdealPreferenceTags(user.ideal_date_tags),
           bio: user.bio ?? undefined,
@@ -159,7 +157,6 @@ export async function GET(request: Request) {
         university: item.university,
         lastMessage: item.lastMessage,
         lastMessageAt: item.lastMessageAt,
-        email: item.email,
         ideal_date: item.ideal_date,
         ideal_date_tags: item.ideal_date_tags,
         bio: item.bio,

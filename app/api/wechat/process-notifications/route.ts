@@ -1,9 +1,24 @@
 import { eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
-import { listChatNotificationEvents, markChatNotificationEvent } from "@/lib/chat-notification-events";
+import {
+  apiError,
+  apiSuccess,
+  handleApiRouteError,
+  readJsonBody,
+} from "@/lib/api-route";
+import {
+  listChatNotificationEvents,
+  markChatNotificationEvent,
+} from "@/lib/chat-notification-events";
 import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { isOpsRequestAuthorized } from "@/lib/ops-auth";
 import { chatMessages, profiles } from "@/lib/schema";
-import { getAppBaseUrl, isWeChatNotificationDeliveryConfigured, sendWeChatMessageNotification } from "@/lib/wechat";
+import {
+  getAppBaseUrl,
+  isWeChatNotificationDeliveryConfigured,
+  sendWeChatMessageNotification,
+} from "@/lib/wechat";
+
+export const dynamic = "force-dynamic";
 
 function toPositiveInt(value: unknown) {
   if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
@@ -16,7 +31,14 @@ function toPositiveInt(value: unknown) {
 
 export async function POST(request: Request) {
   try {
-    const payload = await request.json().catch(() => ({}));
+    if (!isOpsRequestAuthorized(request)) {
+      return apiError("Unauthorized", {
+        status: 401,
+        code: "OPS_UNAUTHORIZED",
+      });
+    }
+
+    const payload = (await readJsonBody(request).catch(() => null)) as Record<string, unknown> | null;
     const mode = resolveQuizMode(payload?.mode);
     const receiverId = toPositiveInt(payload?.receiverId);
     const limit = Math.min(Math.max(toPositiveInt(payload?.limit) ?? 20, 1), 50);
@@ -99,8 +121,8 @@ export async function POST(request: Request) {
         const chatUrl = `${getAppBaseUrl()}/chat?userId=${event.receiverId}&targetUserId=${event.senderId}&mode=${mode}`;
         await sendWeChatMessageNotification({
           openId: receiver.wechat_open_id,
-          senderName: sender?.name || "有人",
-          previewText: message?.content || "你收到了一条新的匹配消息",
+          senderName: sender?.name || "Someone",
+          previewText: message?.content || "You received a new chat message.",
           chatUrl,
           mode,
         });
@@ -123,8 +145,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({
-      success: true,
+    return apiSuccess({
       mode,
       deliveryReady,
       summary: {
@@ -137,7 +158,10 @@ export async function POST(request: Request) {
       results,
     });
   } catch (error) {
-    console.error("Error processing WeChat notifications:", error);
-    return NextResponse.json({ error: "Failed to process WeChat notifications" }, { status: 500 });
+    return handleApiRouteError(error, {
+      message: "Failed to process WeChat notifications",
+      code: "PROCESS_WECHAT_NOTIFICATIONS_FAILED",
+      logMessage: "Error processing WeChat notifications:",
+    });
   }
 }

@@ -421,7 +421,7 @@ export async function sendMatchResultEmail(params: {
   matchCount: number;
   viewUrl: string;
 }) {
-  const { email, name, matchCount } = params;
+  const { email, name, matchCount, viewUrl } = params;
 
   return sendEmail(
     {
@@ -440,7 +440,7 @@ export async function sendMatchResultEmail(params: {
 
             <div style="margin:30px 0;padding:20px;background:#fff8fb;border-radius:12px;border:1px dashed #db2777;">
               <p style="margin:0 0 8px;font-size:18px;color:#db2777;font-weight:bold;">请复制以下链接到浏览器查看结果：</p>
-              <p style="margin:0;word-break:break-all;font-size:18px;color:#1f1f1f;font-weight:bold;">http://39.107.110.145:3000</p>
+              <p style="margin:0;word-break:break-all;font-size:18px;color:#1f1f1f;font-weight:bold;">${viewUrl}</p>
             </div>
 
             <p style="margin:20px 0 0;font-size:16px;color:#8c7a80;">匹配结果将在 5 天内有效，请及时查看。</p>
@@ -449,7 +449,7 @@ export async function sendMatchResultEmail(params: {
           <p style="margin:24px 0 0;font-size:16px;color:#8c7a80;text-align:center;">祝你遇见美好 · DateMatch 团队</p>
         </div>
       `,
-      text: `亲爱的 ${name}，你的本周匹配结果已出炉，共找到 ${matchCount} 位高潜力对象。请复制以下链接到浏览器查看：http://39.107.110.145:3000`,
+      text: `亲爱的 ${name}，你的本周匹配结果已出炉，共找到 ${matchCount} 位高潜力对象。请复制以下链接到浏览器查看：${viewUrl}`,
     },
     "match result email send failed",
     "match_result"

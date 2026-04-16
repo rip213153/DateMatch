@@ -8,7 +8,6 @@ export type ChatContact = {
   university: string;
   lastMessage: string | null;
   lastMessageAt: string | null;
-  email?: string;
   ideal_date?: string;
   ideal_date_tags?: string[];
   bio?: string;
@@ -43,6 +42,25 @@ export function sortChatContacts(items: ChatContact[]) {
   });
 }
 
+function sanitizeChatContact(contact: ChatContact): ChatContact {
+  return {
+    id: contact.id,
+    name: contact.name,
+    age: contact.age,
+    university: contact.university,
+    lastMessage: contact.lastMessage ?? null,
+    lastMessageAt: contact.lastMessageAt ?? null,
+    ideal_date: contact.ideal_date,
+    ideal_date_tags: Array.isArray(contact.ideal_date_tags) ? contact.ideal_date_tags : undefined,
+    bio: contact.bio,
+    interests: contact.interests,
+  };
+}
+
+function sanitizeChatContacts(contacts: ChatContact[]) {
+  return contacts.map((contact) => sanitizeChatContact(contact));
+}
+
 function buildContactsCacheKey(userId: number, mode: QuizMode) {
   return `${CONTACTS_CACHE_STORAGE_PREFIX}:${mode}:${userId}`;
 }
@@ -65,7 +83,7 @@ function readContactsCacheFromStorage(cacheKey: string): ContactsCacheEntry | un
     }
 
     return {
-      contacts: sortChatContacts(parsed.contacts as ChatContact[]),
+      contacts: sortChatContacts(sanitizeChatContacts(parsed.contacts as ChatContact[])),
       loadedAt: parsed.loadedAt,
     };
   } catch {
@@ -128,8 +146,9 @@ export function useChatContacts({ currentUserId, mode, targetUserIdFromQuery }: 
   const setContactsCacheEntry = useCallback(
     (userId: number, nextContacts: ChatContact[]) => {
       const cacheKey = buildContactsCacheKey(userId, mode);
+      const sanitizedContacts = sortChatContacts(sanitizeChatContacts(nextContacts));
       const entry: ContactsCacheEntry = {
-        contacts: sortChatContacts(nextContacts),
+        contacts: sanitizedContacts,
         loadedAt: Date.now(),
       };
 
@@ -158,7 +177,9 @@ export function useChatContacts({ currentUserId, mode, targetUserIdFromQuery }: 
           throw new Error(data?.error || "加载聊天联系人失败，请稍后重试。");
         }
 
-        return sortChatContacts(Array.isArray(data.contacts) ? (data.contacts as ChatContact[]) : []);
+        return sortChatContacts(
+          sanitizeChatContacts(Array.isArray(data.contacts) ? (data.contacts as ChatContact[]) : []),
+        );
       })();
 
       inFlightContactsRequestsRef.current.set(cacheKey, nextRequest);

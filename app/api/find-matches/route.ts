@@ -47,6 +47,16 @@ function buildSchedulePayload(now: Date = new Date()) {
   };
 }
 
+function sanitizePublicMatches<T extends { user: { email?: unknown } }>(matches: T[]): T[] {
+  return matches.map((item) => ({
+    ...item,
+    user: {
+      ...item.user,
+      email: undefined,
+    },
+  })) as T[];
+}
+
 function toTimestamp(value: unknown): number | null {
   if (!value) return null;
   if (value instanceof Date) return value.getTime();
@@ -125,7 +135,7 @@ function buildOpenResponse(
 ) {
   return apiSuccess({
     mode,
-    matches: result.matches,
+    matches: sanitizePublicMatches(result.matches),
     totalMatches: result.matches.length,
     currentUser: buildCurrentUserPayload(result.currentUser),
     optOutUntil: result.optOutUntil,

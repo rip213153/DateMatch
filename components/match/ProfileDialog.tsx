@@ -27,7 +27,7 @@ function formatInterests(interests: unknown) {
     const normalized = interests
       .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
       .map((item) => item.trim());
-    return normalized.length > 0 ? normalized.join("、") : "暂未填写";
+    return normalized.length > 0 ? normalized.join(", ") : "Not provided";
   }
 
   if (typeof interests === "string" && interests.trim()) {
@@ -35,53 +35,53 @@ function formatInterests(interests: unknown) {
       .split(/[\n,，、/]+/)
       .map((item) => item.trim())
       .filter(Boolean);
-    return normalized.length > 0 ? normalized.join("、") : "暂未填写";
+    return normalized.length > 0 ? normalized.join(", ") : "Not provided";
   }
 
-  return "暂未填写";
+  return "Not provided";
 }
 
 function getConfirmationCopy(status: MatchConfirmationStatus | null) {
   if (!status) {
     return {
-      title: "确认状态加载中",
-      description: "稍等一下，正在同步你们本轮的互选状态。",
-      actionLabel: "加载中",
+      title: "Confirmation loading",
+      description: "Please wait while we sync the latest confirmation status.",
+      actionLabel: "Loading",
       actionDisabled: true,
     };
   }
 
   if (status.canMessage) {
     return {
-      title: "已互相确认",
-      description: "你们已经完成双向确认，可以继续安心聊天。",
-      actionLabel: "已互相确认",
+      title: "Mutually confirmed",
+      description: "You have both confirmed, so you can keep chatting with confidence.",
+      actionLabel: "Mutually confirmed",
       actionDisabled: true,
     };
   }
 
   if (status.selfConfirmed) {
     return {
-      title: "你已确认对方",
-      description: "你已经表达过兴趣，现在等待对方回应。",
-      actionLabel: "取消确认",
+      title: "You confirmed them",
+      description: "You already showed interest. Now you are waiting for their reply.",
+      actionLabel: "Cancel confirmation",
       actionDisabled: false,
     };
   }
 
   if (status.otherConfirmed) {
     return {
-      title: "对方已确认你",
-      description: "对方已经表达兴趣，你可以决定是否回应确认。",
-      actionLabel: "回应确认",
+      title: "They confirmed you",
+      description: "They already showed interest. You can decide whether to confirm back.",
+      actionLabel: "Confirm back",
       actionDisabled: false,
     };
   }
 
   return {
-    title: "可以先点亮一下",
-    description: "点亮后，对方会知道你对这次匹配有兴趣。",
-    actionLabel: "点亮 TA",
+    title: "You can light them up first",
+    description: "After you confirm, they will know that you are interested in this match.",
+    actionLabel: "Light them up",
     actionDisabled: false,
   };
 }
@@ -98,38 +98,49 @@ export function ProfileDialog({
 }: ProfileDialogProps) {
   const router = useRouter();
   const [emailUnlocked, setEmailUnlocked] = useState(false);
+  const [unlockedEmail, setUnlockedEmail] = useState<string | null>(null);
   const [checkingEmailAccess, setCheckingEmailAccess] = useState(false);
   const confirmationCopy = getConfirmationCopy(confirmationStatus);
 
   useEffect(() => {
     if (!open || !match || !currentUser) {
       setEmailUnlocked(false);
+      setUnlockedEmail(null);
       setCheckingEmailAccess(false);
       return;
     }
 
     const controller = new AbortController();
     setCheckingEmailAccess(true);
+    setEmailUnlocked(false);
+    setUnlockedEmail(null);
 
     fetch(
-      `/api/chat/messages?userId=${encodeURIComponent(currentUser.id)}&targetUserId=${encodeURIComponent(match.id)}&mode=${mode}`,
+      `/api/chat/contact-email?userId=${encodeURIComponent(currentUser.id)}&targetUserId=${encodeURIComponent(match.id)}&mode=${mode}`,
       { cache: "no-store", signal: controller.signal },
     )
-      .then((response) => {
-        if (!response.ok) throw new Error("fetch failed");
-        return response.json();
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data?.error || "fetch failed");
+        return data;
       })
       .then((data) => {
-        const chatMessages: Array<{ senderId: number }> = Array.isArray(data.messages) ? data.messages : [];
-        const sentByCurrentUser = chatMessages.some((message) => message.senderId === currentUser.id);
-        const sentByTargetUser = chatMessages.some((message) => message.senderId === match.id);
-        setEmailUnlocked(sentByCurrentUser && sentByTargetUser);
+        const nextUnlocked = Boolean(data?.emailUnlocked);
+        setEmailUnlocked(nextUnlocked);
+        setUnlockedEmail(nextUnlocked && typeof data?.email === "string" ? data.email : null);
       })
-      .catch(() => {
+      .catch((error) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error("Failed to resolve match email access:", error);
         setEmailUnlocked(false);
+        setUnlockedEmail(null);
       })
       .finally(() => {
-        setCheckingEmailAccess(false);
+        if (!controller.signal.aborted) {
+          setCheckingEmailAccess(false);
+        }
       });
 
     return () => controller.abort();
@@ -165,7 +176,7 @@ export function ProfileDialog({
           <ProfileDialogEmailSection
             checkingEmailAccess={checkingEmailAccess}
             emailUnlocked={emailUnlocked}
-            email={match.email}
+            email={unlockedEmail ?? undefined}
           />
           <ProfileDialogActionsSection
             actionDisabled={confirmationCopy.actionDisabled}

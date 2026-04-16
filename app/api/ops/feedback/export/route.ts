@@ -1,6 +1,6 @@
 import { apiError, handleApiRouteError } from "@/lib/api-route";
 import { filterOpsFeedbackItems, getFeedbackSummary } from "@/lib/ops-dashboard";
-import { isOpsAuthenticated } from "@/lib/ops-auth";
+import { isOpsRequestAuthorized } from "@/lib/ops-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ function readFilterParam(searchParams: URLSearchParams, key: string, legacyKey: 
 
 export async function GET(request: Request) {
   try {
-    if (!isOpsAuthenticated()) {
+    if (!isOpsRequestAuthorized(request)) {
       return apiError("Unauthorized", {
         status: 401,
         code: "OPS_UNAUTHORIZED",

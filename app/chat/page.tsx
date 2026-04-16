@@ -8,7 +8,7 @@ import type { MatchConfirmationStatus } from "@/components/match/types";
 import { deriveChatViewState } from "@/lib/chat-page-state";
 import { type ChatContact, useChatContacts } from "@/lib/use-chat-contacts";
 import { useChatConfirmationStatus } from "@/lib/use-chat-confirmation-status";
-import { hasMutualMessages, hasPendingReply, useChatMessages } from "@/lib/use-chat-messages";
+import { hasPendingReply, useChatMessages } from "@/lib/use-chat-messages";
 import { IdealPreferenceDisplay } from "@/components/profile/IdealPreferenceDisplay";
 import { BackButton } from "@/components/ui/back-button";
 import { Button } from "@/components/ui/button";
@@ -147,6 +147,7 @@ export default function ChatPage() {
   const [selectedContact, setSelectedContact] = useState<ChatContact | null>(null);
   const [checkingEmailAccess, setCheckingEmailAccess] = useState(false);
   const [emailUnlocked, setEmailUnlocked] = useState(false);
+  const [selectedContactEmail, setSelectedContactEmail] = useState<string | null>(null);
   const [isPageVisible, setIsPageVisible] = useState(() => (typeof document === "undefined" ? true : !document.hidden));
   const [isWindowFocused, setIsWindowFocused] = useState(() => (typeof document === "undefined" ? true : document.hasFocus()));
 
@@ -174,9 +175,6 @@ export default function ChatPage() {
     messageError,
     setMessageError,
     sendMessage,
-    getCachedMessages,
-    isCachedConversationFresh,
-    ensureConversationLoaded,
   } = useChatMessages({
     currentUserId,
     activeContactId,
@@ -247,41 +245,57 @@ export default function ChatPage() {
     return () => window.clearTimeout(timer);
   }, [activeContactId, messages.length, scrollToBottom]);
 
-  const openProfile = async (contact: ChatContact) => {
-    setSelectedContact(contact);
-    setProfileOpen(true);
-    setCheckingEmailAccess(false);
-
-    if (!currentUserId) return;
-
-    const cachedMessages = getCachedMessages(contact.id);
-
-    if (cachedMessages) {
-      setEmailUnlocked(hasMutualMessages(cachedMessages, currentUserId, contact.id));
-    } else {
+  useEffect(() => {
+    if (!profileOpen || !selectedContact || !currentUserId) {
+      setCheckingEmailAccess(false);
       setEmailUnlocked(false);
-    }
-
-    if (contact.id === activeContactId || isCachedConversationFresh(contact.id)) {
+      setSelectedContactEmail(null);
       return;
     }
 
+    const controller = new AbortController();
     setCheckingEmailAccess(true);
-    try {
-      const nextMessages = await ensureConversationLoaded(contact.id, {
-        useCachedFirst: true,
-        forceRefresh: true,
-      });
-      if (nextMessages) {
-        setEmailUnlocked(hasMutualMessages(nextMessages, currentUserId, contact.id));
-      }
-    } catch {
-      if (!cachedMessages) {
+    setEmailUnlocked(false);
+    setSelectedContactEmail(null);
+
+    fetch(
+      `/api/chat/contact-email?userId=${encodeURIComponent(currentUserId)}&targetUserId=${encodeURIComponent(selectedContact.id)}&mode=${mode}`,
+      { cache: "no-store", signal: controller.signal },
+    )
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data?.error || "fetch failed");
+        }
+        return data;
+      })
+      .then((data) => {
+        const unlocked = Boolean(data?.emailUnlocked);
+        setEmailUnlocked(unlocked);
+        setSelectedContactEmail(
+          unlocked && typeof data?.email === "string" ? data.email : null,
+        );
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        console.error("Failed to resolve contact email access:", error);
         setEmailUnlocked(false);
-      }
-    } finally {
-      setCheckingEmailAccess(false);
-    }
+        setSelectedContactEmail(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setCheckingEmailAccess(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [currentUserId, mode, profileOpen, selectedContact]);
+
+  const openProfile = (contact: ChatContact) => {
+    setSelectedContact(contact);
+    setProfileOpen(true);
   };
 
   const handleSend = async () => {
@@ -536,7 +550,7 @@ export default function ChatPage() {
                   {checkingEmailAccess ? (
                     "正在检查是否满足展示条件..."
                   ) : emailUnlocked ? (
-                    selectedContact.email || "暂未填写"
+                    selectedContactEmail || "暂未填写"
                   ) : (
                     <div className="space-y-1">
                       <div>只有当双方都互相发过消息后，这里才会显示邮箱。</div>
@@ -548,7 +562,9 @@ export default function ChatPage() {
 
               <div className="flex items-center justify-between rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-500">
                 <span>当前公开邮箱</span>
-                <span className="font-medium text-gray-700">{maskEmail(emailUnlocked ? selectedContact.email ?? null : null) || "未解锁"}</span>
+                <span className="font-medium text-gray-700">
+                  {maskEmail(emailUnlocked ? selectedContactEmail : null) || "未解锁"}
+                </span>
               </div>
 
               <div className="flex gap-3">
