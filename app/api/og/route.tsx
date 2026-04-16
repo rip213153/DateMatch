@@ -17,6 +17,16 @@ type TraitMetaItem = {
   color: string;
 };
 
+type OgFontDefinition = {
+  name: "Noto Sans SC";
+  data: ArrayBuffer;
+  style: "normal";
+  weight: 400 | 700;
+};
+
+let ogFontsPromise: Promise<OgFontDefinition[]> | null = null;
+let ogFontsOrigin: string | null = null;
+
 const ROMANCE_DEFAULT_PROFILE = {
   socialStyle: 5,
   emotionalReadiness: 5,
@@ -146,7 +156,50 @@ function getSummary(value: number, label: string) {
   return `${label}维度还有提升空间`;
 }
 
-async function renderDefaultImage(title: string, description: string) {
+async function fetchOgFont(url: URL) {
+  const response = await fetch(url, { cache: "force-cache" });
+
+  if (!response.ok) {
+    throw new Error(`Failed to load OG font: ${url.pathname}`);
+  }
+
+  return response.arrayBuffer();
+}
+
+async function getOgFonts(requestUrl: string) {
+  const origin = new URL(requestUrl).origin;
+
+  if (!ogFontsPromise || ogFontsOrigin !== origin) {
+    ogFontsOrigin = origin;
+    ogFontsPromise = Promise.all([
+      fetchOgFont(new URL("/og-fonts/NotoSansSC-Regular.otf", requestUrl)),
+      fetchOgFont(new URL("/og-fonts/NotoSansSC-Bold.otf", requestUrl)),
+    ])
+      .then(([regular, bold]) => [
+        {
+          name: "Noto Sans SC" as const,
+          data: regular,
+          style: "normal" as const,
+          weight: 400 as const,
+        },
+        {
+          name: "Noto Sans SC" as const,
+          data: bold,
+          style: "normal" as const,
+          weight: 700 as const,
+        },
+      ])
+      .catch((error) => {
+        ogFontsPromise = null;
+        ogFontsOrigin = null;
+        throw error;
+      });
+  }
+
+  return ogFontsPromise;
+}
+
+async function renderDefaultImage(title: string, description: string, fonts: OgFontDefinition[]) {
   return new ImageResponse(
     (
       <div
@@ -161,6 +214,7 @@ async function renderDefaultImage(title: string, description: string) {
           padding: "48px",
           position: "relative",
           overflow: "hidden",
+          fontFamily: '"Noto Sans SC"',
         }}
       >
         <div
@@ -225,6 +279,7 @@ async function renderDefaultImage(title: string, description: string) {
     {
       width: 1200,
       height: 630,
+      fonts,
     },
   );
 }
@@ -279,6 +334,7 @@ async function renderResultsImage(
   highlightBody: string,
   adviceTitle: string,
   adviceBody: string,
+  fonts: OgFontDefinition[],
 ) {
   const rows = [traitMeta.slice(0, 2), traitMeta.slice(2, 4), traitMeta.slice(4, 6), traitMeta.slice(6, 8)];
 
@@ -294,6 +350,7 @@ async function renderResultsImage(
           background: "linear-gradient(135deg, #fff1f2 0%, #fdf2f8 46%, #eef6ff 100%)",
           padding: "36px",
           color: "#111827",
+          fontFamily: '"Noto Sans SC"',
         }}
       >
         <div
@@ -415,6 +472,7 @@ async function renderResultsImage(
     {
       width: 1080,
       height: 1440,
+      fonts,
     },
   );
 }
@@ -478,6 +536,7 @@ export async function GET(req: NextRequest) {
     const quizMode: QuizMode = searchParams.get("quizMode") === "friendship" ? "friendship" : "romance";
     const title = searchParams.get("title") || "DateMatch";
     const description = searchParams.get("description") || "校园人格匹配与同频推荐";
+    const fonts = await getOgFonts(req.url);
 
     if (mode === "results") {
       const rawProfile = parseRawProfile(searchParams.get("profile"));
@@ -496,10 +555,11 @@ export async function GET(req: NextRequest) {
         assets.highlightBody,
         assets.adviceTitle,
         assets.adviceBody,
+        fonts,
       );
     }
 
-    return await renderDefaultImage(title, description);
+    return await renderDefaultImage(title, description, fonts);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error(message);
