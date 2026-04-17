@@ -6,7 +6,8 @@ import {
   readJsonBody,
   readPositiveInt,
 } from "@/lib/api-route";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import type { ProfileRow } from "@/lib/db/schema-types";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { INTEREST_TAG_LIMIT, parseInterestValues } from "@/lib/interest-tags";
 import {
   getProfileWithPendingDraft,
@@ -16,11 +17,10 @@ import {
 } from "@/lib/profile-updates";
 import { getProfileRouteAuthContext, postProfileRouteAuthContext } from "@/lib/profile-route-core";
 import { requireAuthenticatedProfile, setSessionCookie } from "@/lib/server-auth";
-import { profiles } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 
-function toResponseProfile(profile: typeof profiles.$inferSelect) {
+function toResponseProfile(profile: ProfileRow) {
   return {
     id: profile.id,
     name: profile.name,
@@ -113,7 +113,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "Invalid profile payload" }, { status: 400 });
     }
 
-    const db = getDbForMode(mode);
+    const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
     const duplicateEmail = await db
       .select({ id: profiles.id })
       .from(profiles)

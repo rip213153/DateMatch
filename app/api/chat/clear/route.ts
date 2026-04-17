@@ -1,7 +1,6 @@
 import { eq, or } from "drizzle-orm";
 import { apiSuccess, handleApiRouteError, readJsonBody, readPositiveInt } from "@/lib/api-route";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
-import { chatMessages } from "@/lib/schema";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { requireAuthenticatedProfile } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +14,7 @@ export async function POST(request: Request) {
       claimedUserId: requestedUserId,
     });
     const userId = Number(profile.id);
-    const db = getDbForMode(mode);
+    const { db, tables: { chatMessages } } = getDatabaseContextForMode(mode);
 
     await db
       .delete(chatMessages)

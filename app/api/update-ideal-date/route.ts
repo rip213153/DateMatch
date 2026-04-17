@@ -7,8 +7,7 @@ import {
   readPositiveInt,
   readTrimmedString,
 } from "@/lib/api-route";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
-import { profiles } from "@/lib/schema";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { requireAuthenticatedProfile } from "@/lib/server-auth";
 import { postUpdateProfileFieldAuthContext } from "@/lib/update-profile-field-route-core";
 
@@ -27,7 +26,8 @@ export async function POST(request: Request) {
       code: "MISSING_IDEAL_DATE",
     });
 
-    await getDbForMode(mode)
+    const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
+    await db
       .update(profiles)
       .set({ ideal_date: newIdealDate })
       .where(eq(profiles.id, Number(profile.id)));

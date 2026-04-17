@@ -16,6 +16,7 @@ import {
   getMutualPairRowsForUser,
   getMutualTargetUserId,
 } from "@/lib/mutual-matching";
+import type { MutualPairRow } from "@/lib/db/schema-types";
 import {
   getProfileRowByIdForMode,
   listProfileRowsByIdsForMode,
@@ -87,7 +88,7 @@ async function findMatchesByUserId(userId: number, mode: "romance" | "friendship
   const shouldLoadMutualMatches = schedule.isInDisplayWindow && isEligibleForCurrentRound;
   const matches = shouldLoadMutualMatches
     ? await (async () => {
-        const pairRows = await getMutualPairRowsForUser(userId, mode, schedule.releaseAt);
+        const pairRows = (await getMutualPairRowsForUser(userId, mode, schedule.releaseAt)) as MutualPairRow[];
         const targetUserIds = pairRows.map((pairRow) => getMutualTargetUserId(pairRow, userId));
         const targetProfileRows = await listProfileRowsByIdsForMode(mode, targetUserIds);
         return buildMutualMatchesForUser(userId, mode, currentUserRow, targetProfileRows, pairRows);

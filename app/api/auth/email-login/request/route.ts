@@ -6,9 +6,8 @@ import {
   readJsonBody,
   readLowercaseEmail,
 } from "@/lib/api-route";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { setSessionCookie } from "@/lib/server-auth";
-import { profiles } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +16,7 @@ function isValidEmail(value: string) {
 }
 
 async function findProfileByEmail(email: string, mode: "romance" | "friendship") {
-  const db = getDbForMode(mode);
+  const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
   const rows = await db
     .select({ id: profiles.id, email: profiles.email })
     .from(profiles)

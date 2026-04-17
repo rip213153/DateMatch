@@ -1,12 +1,11 @@
 import { sql } from "drizzle-orm";
 import { getAuthSessionStateCore, type SessionRouteDependencies } from "./auth-session-core";
-import { getDbForMode } from "./database";
+import { getDatabaseContextForMode } from "./database";
 import { readSessionFromRequest } from "./server-auth";
-import { profiles } from "./schema";
 import type { SessionPayload } from "./session";
 
 async function getProfileByEmail(payload: SessionPayload) {
-  const db = getDbForMode(payload.mode);
+  const { db, tables: { profiles } } = getDatabaseContextForMode(payload.mode);
   const rows = await db
     .select({ id: profiles.id, email: profiles.email })
     .from(profiles)

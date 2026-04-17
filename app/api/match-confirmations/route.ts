@@ -7,7 +7,7 @@ import {
   readJsonBody,
   readPositiveInt,
 } from "@/lib/api-route";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { getMatchSchedule } from "@/lib/match-schedule";
 import {
   getMatchConfirmationsAuthContext,
@@ -20,7 +20,7 @@ import {
   getMutualPairRowForUsers,
   getMutualPairRowsForUser,
 } from "@/lib/mutual-matching";
-import { matchPairs } from "@/lib/schema";
+import type { MutualPairRow } from "@/lib/db/schema-types";
 import { requireAuthenticatedProfile } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
       });
     }
 
-    const pairRows = await getMutualPairRowsForUser(userId, mode, schedule.releaseAt);
+    const pairRows = (await getMutualPairRowsForUser(userId, mode, schedule.releaseAt)) as MutualPairRow[];
     const pairMap = new Map(pairRows.map((pairRow) => [`${pairRow.user_a_id}:${pairRow.user_b_id}`, pairRow]));
 
     for (const targetUserId of targetUserIds) {
@@ -125,7 +125,7 @@ export async function POST(request: Request) {
       code: "MATCH_CONFIRMATION_CLOSED",
     });
 
-    const db = getDbForMode(mode);
+    const { db, tables: { matchPairs } } = getDatabaseContextForMode(mode);
     const pairRow = await getMutualPairRowForUsers(
       userId,
       targetUserId,

@@ -1,7 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
-import { profiles } from "@/lib/schema";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { readSessionFromRequest } from "@/lib/server-auth";
 import { exchangeWeChatCode } from "@/lib/wechat";
 import { isWeChatBindAllowed, resolveWeChatBindIdentity } from "@/lib/wechat-bind-route-core";
@@ -23,7 +22,7 @@ async function bindOpenIdToProfile(
   unionId: string | null,
   noticeOptIn: boolean,
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
   const [profile] = await db
     .update(profiles)
     .set({
@@ -77,7 +76,7 @@ export async function POST(request: Request) {
     mode = identity.mode;
     const authenticatedSession = identity.session;
 
-    const db = getDbForMode(mode);
+    const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
     const matchedProfiles = await db
       .select({ id: profiles.id })
       .from(profiles)

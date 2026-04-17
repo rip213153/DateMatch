@@ -6,13 +6,12 @@ import {
   readJsonBody,
   readPositiveInt,
 } from "@/lib/api-route";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { getMatchSchedule, isOptedOutForRound } from "@/lib/match-schedule";
 import {
   getMatchStatusAuthContext,
   postMatchStatusAuthContext,
 } from "@/lib/match-status-route-core";
-import { profiles } from "@/lib/schema";
 import { requireAuthenticatedProfile } from "@/lib/server-auth";
 
 type MatchingStatus = "WAITING" | "MATCHED" | "VIEWED";
@@ -93,7 +92,7 @@ export async function POST(request: Request) {
           : new Date(schedule.releaseAt);
     const resolvedOptOutUntil = resolveOptOutUntil(optOutUntil);
 
-    const db = getDbForMode(mode);
+    const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
     await db
       .update(profiles)
       .set({

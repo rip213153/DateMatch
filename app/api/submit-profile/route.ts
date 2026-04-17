@@ -8,11 +8,10 @@ import {
   readLowercaseEmail,
   readTrimmedString,
 } from "@/lib/api-route";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { sendConfirmationEmail } from "@/lib/email";
 import { INTEREST_TAG_LIMIT, parseInterestValues, serializeInterestValues } from "@/lib/interest-tags";
 import { getEligibleReleaseAt, getMatchSchedule } from "@/lib/match-schedule";
-import { profiles } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +25,7 @@ export async function POST(request: Request) {
   try {
     const body = await readJsonBody(request);
     const mode = resolveQuizMode(body.mode);
-    const db = getDbForMode(mode);
+    const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
     const now = new Date();
     const interestValues = parseInterestValues(body.interests);
     const payload = {

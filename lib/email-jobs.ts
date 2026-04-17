@@ -1,10 +1,11 @@
 ﻿import { and, eq } from "drizzle-orm";
 import type { QuizMode } from "@/app/data/types";
+import type { ProfileRow } from "@/lib/db/schema-types";
 import {
   listChatEmailNotificationEvents,
   markChatEmailNotificationEvent,
 } from "@/lib/chat-notification-events";
-import { getDbForMode } from "@/lib/database";
+import { getDatabaseContextForMode } from "@/lib/database";
 import {
   getBaseUrl,
   isEmailDeliveryConfigured,
@@ -21,11 +22,6 @@ import {
   listEligibleProfileRowsForRound,
   syncProfileUpdateDraftsForAllModes,
 } from "@/lib/profile-updates";
-import {
-  chatEmailReminderWindows,
-  matchPairs,
-  profiles,
-} from "@/lib/schema";
 
 const CHAT_REMINDER_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 const CHAT_REMINDER_INTERVAL_MS = 60 * 1000;
@@ -108,7 +104,7 @@ export function isChatReminderCoolingDown(lastSentAt: unknown, now: Date = new D
 }
 
 async function getChatReminderWindow(mode: QuizMode, senderId: number, receiverId: number) {
-  const db = getDbForMode(mode);
+  const { db, tables: { chatEmailReminderWindows } } = getDatabaseContextForMode(mode);
   const rows = await db
     .select({
       id: chatEmailReminderWindows.id,
@@ -132,7 +128,7 @@ async function upsertChatReminderWindow(
   receiverId: number,
   sentAt: Date
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { chatEmailReminderWindows } } = getDatabaseContextForMode(mode);
   await db
     .insert(chatEmailReminderWindows)
     .values({
@@ -161,7 +157,10 @@ export async function processPendingChatReminderEmails(
     limit?: number;
   } = {}
 ): Promise<JobSummary> {
-  const db = getDbForMode(mode);
+  const {
+    db,
+    tables: { profiles },
+  } = getDatabaseContextForMode(mode);
   const events = await listChatEmailNotificationEvents(mode, {
     receiverId: options.receiverId ?? null,
     status: "PENDING",
@@ -290,8 +289,11 @@ export async function processAutomaticMatchReleaseEmails(
     return summary;
   }
 
-  const db = getDbForMode(mode);
-  const eligibleProfileRows = await listEligibleProfileRowsForRound(mode, schedule.releaseAt, now);
+  const {
+    db,
+    tables: { matchPairs, profiles },
+  } = getDatabaseContextForMode(mode);
+  const eligibleProfileRows = (await listEligibleProfileRowsForRound(mode, schedule.releaseAt, now)) as ProfileRow[];
   const roundKey = buildMutualRoundKey(mode, schedule.releaseAt);
   let pairRows = await db
     .select({

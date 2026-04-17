@@ -15,14 +15,13 @@ import {
   getHomeAnnouncementEditorState,
   getResolvedHomeAnnouncement,
 } from "@/lib/home-announcement-store";
-import { getDbForMode } from "@/lib/database";
+import { getDatabaseContextForMode } from "@/lib/database";
 import { getBestFriendshipMatches } from "@/lib/friendship-matching";
 import { generateIceBreakers, getHighlightDebugTrace, getHighlights, type HighlightDebugTraceItem } from "@/lib/match-helpers";
 import { buildMutualRoundKey } from "@/lib/mutual-matching";
 import { getBestMatches } from "@/lib/matching";
 import { DISPLAY_DAYS, MATCH_DAY, MATCH_HOUR, MATCH_MINUTE, getMatchSchedule, isOptedOutForRound } from "@/lib/match-schedule";
 import { normalizeProfile } from "@/lib/profile-normalizer";
-import { chatMessages, chatNotificationEvents, matchPairs, profileUpdateDrafts, profiles } from "@/lib/schema";
 import {
   filterOpsFeedbackItems,
   normalizeOpsFeedbackFilter,
@@ -422,8 +421,11 @@ function buildOpsAlerts(
 }
 
 async function getModeStats(mode: QuizMode, now: Date, releaseAt: number): Promise<OpsModeStats> {
-  const db = getDbForMode(mode);
-  const profilesRows = await db
+  const {
+    db,
+    tables: { chatMessages, chatNotificationEvents, matchPairs, profileUpdateDrafts, profiles },
+  } = getDatabaseContextForMode(mode);
+  const profilesRows = (await db
     .select({
       eligibleReleaseAt: profiles.eligible_release_at,
       matchOptOutUntil: profiles.match_opt_out_until,
@@ -431,38 +433,47 @@ async function getModeStats(mode: QuizMode, now: Date, releaseAt: number): Promi
       wechatOpenId: profiles.wechat_open_id,
       wechatNoticeOptIn: profiles.wechat_notice_opt_in,
     })
-    .from(profiles);
+    .from(profiles)) as Array<{
+    eligibleReleaseAt: unknown;
+    matchOptOutUntil: unknown;
+    createdAt: unknown;
+    wechatOpenId: unknown;
+    wechatNoticeOptIn: unknown;
+  }>;
 
-  const pendingDraftRows = await db
+  const pendingDraftRows = (await db
     .select({ count: sql<number>`count(*)` })
     .from(profileUpdateDrafts)
-    .where(eq(profileUpdateDrafts.status, "PENDING"));
+    .where(eq(profileUpdateDrafts.status, "PENDING"))) as Array<{ count: number }>;
 
-  const pairRows = await db
+  const pairRows = (await db
     .select({
       userAConfirmedAt: matchPairs.user_a_confirmed_at,
       userBConfirmedAt: matchPairs.user_b_confirmed_at,
     })
     .from(matchPairs)
-    .where(eq(matchPairs.round_key, buildMutualRoundKey(mode, releaseAt)));
+    .where(eq(matchPairs.round_key, buildMutualRoundKey(mode, releaseAt)))) as Array<{
+    userAConfirmedAt: unknown;
+    userBConfirmedAt: unknown;
+  }>;
 
-  const messageRows = await db
+  const messageRows = (await db
     .select({ count: sql<number>`count(*)` })
     .from(chatMessages)
-    .where(gte(chatMessages.created_at, new Date(now.getTime() - DAY_MS)));
+    .where(gte(chatMessages.created_at, new Date(now.getTime() - DAY_MS)))) as Array<{ count: number }>;
 
-  const notificationRows = await db
+  const notificationRows = (await db
     .select({
       status: chatNotificationEvents.status,
     })
-    .from(chatNotificationEvents);
+    .from(chatNotificationEvents)) as Array<{ status: string }>;
 
   return {
     mode,
     totalProfiles: profilesRows.length,
     eligibleForCurrentRound: profilesRows.filter((row) => isEligibleForRelease(row.eligibleReleaseAt, releaseAt)).length,
     queuedForNextRound: profilesRows.filter((row) => !isEligibleForRelease(row.eligibleReleaseAt, releaseAt)).length,
-    optedOutForCurrentRound: profilesRows.filter((row) => isOptedOutForRound(row.matchOptOutUntil, now)).length,
+    optedOutForCurrentRound: profilesRows.filter((row) => isOptedOutForRound(row.matchOptOutUntil as Date | string | number | null, now)).length,
     profilesCreatedInLast7Days: profilesRows.filter((row) => {
       const timestamp = toTimestamp(row.createdAt);
       return timestamp !== null && timestamp >= now.getTime() - 7 * DAY_MS;
@@ -483,15 +494,24 @@ async function getInspectionDataForMode(
   releaseAt: number,
   pairLimit: number = 4,
 ): Promise<OpsInspectionModeData> {
-  const db = getDbForMode(mode);
+  const {
+    db,
+    tables: { matchPairs, profiles },
+  } = getDatabaseContextForMode(mode);
   const roundKey = buildMutualRoundKey(mode, releaseAt);
-  const pairRows = await db
+  const pairRows = (await db
     .select()
     .from(matchPairs)
     .where(eq(matchPairs.round_key, roundKey))
-    .orderBy(desc(matchPairs.pair_score), desc(matchPairs.id));
+    .orderBy(desc(matchPairs.pair_score), desc(matchPairs.id))) as Array<{
+    id: number;
+    user_a_id: number;
+    user_b_id: number;
+    pair_score: number;
+    base_score: number;
+  }>;
   const sampledPairs = pickInspectionPairRows(pairRows, pairLimit);
-  const profileRows = await db.select().from(profiles);
+  const profileRows = (await db.select().from(profiles)) as Array<Parameters<typeof normalizeProfile>[0]>;
   const profilesById = new Map(
     profileRows.map((row) => {
       const normalized = normalizeProfile(row);

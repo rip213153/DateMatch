@@ -1,9 +1,8 @@
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import type { QuizMode } from "@/app/data/types";
-import { getDbForMode } from "@/lib/database";
+import { getDatabaseContextForMode } from "@/lib/database";
 import { getMatchSchedule } from "@/lib/match-schedule";
 import { buildMutualRoundKey, hasMutualPairForUsers } from "@/lib/mutual-matching";
-import { chatMessages } from "@/lib/schema";
 
 export type ChatConversationScope = {
   roundKey: string | null;
@@ -16,15 +15,26 @@ export function normalizeChatRoundKey(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function buildChatPairCondition(userId: number, targetUserId: number) {
+type ChatMessagesTable = ReturnType<typeof getDatabaseContextForMode>["tables"]["chatMessages"];
+
+export function buildChatPairCondition(
+  chatMessages: ChatMessagesTable,
+  userId: number,
+  targetUserId: number
+) {
   return or(
     and(eq(chatMessages.sender_id, userId), eq(chatMessages.receiver_id, targetUserId)),
     and(eq(chatMessages.sender_id, targetUserId), eq(chatMessages.receiver_id, userId))
   );
 }
 
-export function buildChatConversationCondition(userId: number, targetUserId: number, roundKey: string | null) {
-  const pairCondition = buildChatPairCondition(userId, targetUserId);
+export function buildChatConversationCondition(
+  chatMessages: ChatMessagesTable,
+  userId: number,
+  targetUserId: number,
+  roundKey: string | null
+) {
+  const pairCondition = buildChatPairCondition(chatMessages, userId, targetUserId);
 
   return roundKey === null
     ? and(pairCondition, isNull(chatMessages.round_key))
@@ -48,13 +58,13 @@ export async function resolveChatConversationScope(
     }
   }
 
-  const db = getDbForMode(mode);
+  const { db, tables: { chatMessages } } = getDatabaseContextForMode(mode);
   const [latestRow] = await db
     .select({
       round_key: chatMessages.round_key,
     })
     .from(chatMessages)
-    .where(buildChatPairCondition(userId, targetUserId))
+    .where(buildChatPairCondition(chatMessages, userId, targetUserId))
     .orderBy(desc(chatMessages.created_at), desc(chatMessages.id))
     .limit(1);
 

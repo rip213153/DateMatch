@@ -3,11 +3,11 @@ import { normalizeIdealPreferenceTags } from "@/app/data/idealPreferenceTags";
 import { apiSuccess, handleApiRouteError, readPositiveInt } from "@/lib/api-route";
 import { getChatContactsAuthContext } from "@/lib/chat-contacts-route-core";
 import { normalizeChatRoundKey } from "@/lib/chat-conversations";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import type { MutualPairRow, ProfileRow } from "@/lib/db/schema-types";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { getMatchSchedule } from "@/lib/match-schedule";
 import { buildMutualRoundKey, getMutualPairRowsForUser, getMutualTargetUserId } from "@/lib/mutual-matching";
 import { listProfileRowsByIdsForMode, syncProfileUpdateDrafts } from "@/lib/profile-updates";
-import { chatMessages } from "@/lib/schema";
 import { requireAuthenticatedProfile } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -54,21 +54,21 @@ export async function GET(request: Request) {
     });
     const userId = Number(profile.id);
 
-    const db = getDbForMode(mode);
+    const { db, tables: { chatMessages } } = getDatabaseContextForMode(mode);
     const now = new Date();
     await syncProfileUpdateDrafts(mode, now);
 
     const schedule = getMatchSchedule(now);
-    const mutualPairRows = schedule.isInDisplayWindow
+    const mutualPairRows = (schedule.isInDisplayWindow
       ? await getMutualPairRowsForUser(userId, mode, schedule.releaseAt)
-      : [];
+      : []) as MutualPairRow[];
     const currentRoundKey = schedule.isInDisplayWindow ? buildMutualRoundKey(mode, schedule.releaseAt) : null;
 
     const pairScoreMap = new Map(
       mutualPairRows.map((pairRow) => [getMutualTargetUserId(pairRow, userId), Number(pairRow.pair_score)]),
     );
 
-    const messageRows = await db
+    const messageRows = (await db
       .select({
         id: chatMessages.id,
         round_key: chatMessages.round_key,
@@ -79,9 +79,16 @@ export async function GET(request: Request) {
       })
       .from(chatMessages)
       .where(or(eq(chatMessages.sender_id, userId), eq(chatMessages.receiver_id, userId)))
-      .orderBy(desc(chatMessages.created_at), desc(chatMessages.id));
+      .orderBy(desc(chatMessages.created_at), desc(chatMessages.id))) as Array<{
+      id: number;
+      round_key: string | null;
+      sender_id: number;
+      receiver_id: number;
+      content: string;
+      created_at: unknown;
+    }>;
 
-    const visibleContactIds = new Set<number>(Array.from(pairScoreMap.keys()));
+    const visibleContactIds = new Set<number>(Array.from(pairScoreMap.keys()) as number[]);
     const latestMessageMap = new Map<number, { content: string; createdAt: string | null }>();
     const historyRoundMap = new Map<number, string | null>();
 
@@ -115,7 +122,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const contactProfileRows = await listProfileRowsByIdsForMode(mode, Array.from(visibleContactIds));
+    const contactProfileRows = (await listProfileRowsByIdsForMode(mode, Array.from(visibleContactIds))) as ProfileRow[];
     const userMap = new Map(contactProfileRows.map((user) => [Number(user.id), user]));
 
     const contacts: ContactItem[] = Array.from(visibleContactIds)

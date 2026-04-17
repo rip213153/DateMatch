@@ -1,8 +1,7 @@
 import { createHash } from "crypto";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { getDbForMode } from "@/lib/database";
-import { emailLoginTokens } from "@/lib/schema";
+import { getDatabaseContextForMode } from "@/lib/database";
 import { createSessionToken } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +42,7 @@ export async function GET(request: Request) {
     const now = Math.floor(Date.now() / 1000);
     const tokenHash = hashValue(token);
     const mode = resolveSessionMode(redirect);
-    const db = getDbForMode(mode);
+    const { db, tables: { emailLoginTokens } } = getDatabaseContextForMode(mode);
 
     const rows = await db
       .select({ id: emailLoginTokens.id, email: emailLoginTokens.email })

@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, or, sql } from "drizzle-orm";
 import type { QuizMode, UserProfile } from "@/app/data/types";
-import { getDbForMode } from "@/lib/database";
+import type { MutualPairInsert, MutualPairRow, ProfileRow } from "@/lib/db/schema-types";
+import { getDatabaseContextForMode } from "@/lib/database";
 import { getBestFriendshipMatches } from "@/lib/friendship-matching";
 import {
   buildMatchPairKey,
@@ -9,11 +10,8 @@ import {
 } from "@/lib/match-repeat-policy";
 import { getBestMatches } from "@/lib/matching";
 import { normalizeProfile, normalizeProfiles } from "@/lib/profile-normalizer";
-import { matchPairs, profiles } from "@/lib/schema";
 
 export const MUTUAL_MATCH_LIMIT = 3;
-
-type ProfileRow = typeof profiles.$inferSelect;
 
 type RankedMatch = {
   user: UserProfile;
@@ -29,9 +27,6 @@ type RankedMatch = {
     recommendations: string[];
   };
 };
-
-type MutualPairRow = typeof matchPairs.$inferSelect;
-type MutualPairInsert = typeof matchPairs.$inferInsert;
 
 function getRankedMatches(
   mode: QuizMode,
@@ -72,7 +67,7 @@ export function buildMutualRoundKey(mode: QuizMode, releaseAt: number) {
 }
 
 export async function countMutualPairsForRound(mode: QuizMode, releaseAt: number) {
-  const db = getDbForMode(mode);
+  const { db, tables: { matchPairs } } = getDatabaseContextForMode(mode);
   const roundKey = buildMutualRoundKey(mode, releaseAt);
   const countRows = await db
     .select({ count: sql<number>`count(*)` })
@@ -87,7 +82,7 @@ export async function hasPreparedMutualPairsForRound(mode: QuizMode, releaseAt: 
 }
 
 async function listCoolingDownPairKeys(mode: QuizMode, now: Date = new Date()) {
-  const db = getDbForMode(mode);
+  const { db, tables: { matchPairs } } = getDatabaseContextForMode(mode);
   const rows = await db
     .select({
       user_a_id: matchPairs.user_a_id,
@@ -99,9 +94,9 @@ async function listCoolingDownPairKeys(mode: QuizMode, now: Date = new Date()) {
         eq(matchPairs.mode, mode),
         gte(matchPairs.created_at, getMatchRepeatWindowStart(now)),
       ),
-    );
+    ) as Array<Pick<MutualPairRow, "user_a_id" | "user_b_id">>;
 
-  return new Set(rows.map((row) => buildMatchPairKey(row.user_a_id, row.user_b_id)));
+  return new Set<string>(rows.map((row) => buildMatchPairKey(row.user_a_id, row.user_b_id)));
 }
 
 export async function prepareMutualPairsForRound(
@@ -115,7 +110,7 @@ export async function prepareMutualPairsForRound(
     return roundKey;
   }
 
-  const db = getDbForMode(mode);
+  const { db, tables: { matchPairs } } = getDatabaseContextForMode(mode);
   const eligibleUsers = normalizeProfiles(eligibleProfileRows);
   const coolingDownPairKeys = await listCoolingDownPairKeys(mode, now);
   const rankingsByUserId = new Map<number, Map<number, { rank: number; overallScore: number }>>();
@@ -139,7 +134,7 @@ export async function prepareMutualPairsForRound(
     rankingsByUserId.set(userId, rankMap);
   }
 
-  const pairValues: Array<typeof matchPairs.$inferInsert> = [];
+  const pairValues: MutualPairInsert[] = [];
   const seenPairs = new Set<string>();
 
   for (const [userId, rankMap] of Array.from(rankingsByUserId.entries())) {
@@ -188,7 +183,7 @@ export async function getMutualPairRowsForUser(
   mode: QuizMode,
   releaseAt: number,
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { matchPairs } } = getDatabaseContextForMode(mode);
   const roundKey = buildMutualRoundKey(mode, releaseAt);
 
   return db
@@ -283,7 +278,7 @@ export async function getMutualPairRowForUsers(
   mode: QuizMode,
   releaseAt: number,
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { matchPairs } } = getDatabaseContextForMode(mode);
   const roundKey = buildMutualRoundKey(mode, releaseAt);
   const { userAId, userBId } = buildMutualPairKey(userId, targetUserId);
   const rows = await db

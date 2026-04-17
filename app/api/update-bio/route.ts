@@ -6,8 +6,7 @@ import {
   readPositiveInt,
   readTrimmedString,
 } from "@/lib/api-route";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
-import { profiles } from "@/lib/schema";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { requireAuthenticatedProfile } from "@/lib/server-auth";
 import { postUpdateProfileFieldAuthContext } from "@/lib/update-profile-field-route-core";
 
@@ -21,7 +20,7 @@ export async function POST(request: Request) {
     });
     const newBio = readTrimmedString(body.newBio);
 
-    const db = getDbForMode(mode);
+    const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
     await db.update(profiles).set({ bio: newBio }).where(eq(profiles.id, Number(profile.id)));
 
     return apiSuccess({ message: "鑷垜浠嬬粛宸叉洿鏂?" });

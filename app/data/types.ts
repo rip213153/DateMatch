@@ -122,6 +122,7 @@ export interface UserProfile {
   seeking: string;
   university: string;
   email: string;
+  instagram?: string | null;
   wechat_open_id?: string | null;
   wechat_union_id?: string | null;
   wechat_notice_opt_in?: boolean | null;

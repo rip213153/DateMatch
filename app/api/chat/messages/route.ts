@@ -13,9 +13,8 @@ import {
 } from "@/lib/chat-messages-route-core";
 import { buildChatConversationCondition, resolveChatConversationScope } from "@/lib/chat-conversations";
 import { createChatNotificationEvent } from "@/lib/chat-notification-events";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { getProfileRowByIdForMode, syncProfileUpdateDrafts } from "@/lib/profile-updates";
-import { chatMessages } from "@/lib/schema";
 import { requireAuthenticatedProfile } from "@/lib/server-auth";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +42,7 @@ function toIsoString(value: unknown): string | null {
 }
 
 async function getPairRows(mode: "romance" | "friendship", userId: number, targetUserId: number, roundKey: string | null) {
-  const db = getDbForMode(mode);
+  const { db, tables: { chatMessages } } = getDatabaseContextForMode(mode);
 
   return db
     .select({
@@ -55,7 +54,7 @@ async function getPairRows(mode: "romance" | "friendship", userId: number, targe
       created_at: chatMessages.created_at,
     })
     .from(chatMessages)
-    .where(buildChatConversationCondition(userId, targetUserId, roundKey))
+    .where(buildChatConversationCondition(chatMessages, userId, targetUserId, roundKey))
     .orderBy(asc(chatMessages.created_at), asc(chatMessages.id));
 }
 
@@ -110,7 +109,13 @@ export async function GET(request: Request) {
       code: "CHAT_ACCESS_DENIED",
     });
 
-    const rows = await getPairRows(mode, userId, targetUserId, conversation.roundKey);
+    const rows = (await getPairRows(mode, userId, targetUserId, conversation.roundKey)) as Array<{
+      id: number;
+      sender_id: number;
+      receiver_id: number;
+      content: string;
+      created_at: unknown;
+    }>;
 
     return apiSuccess({
       mode,
@@ -161,7 +166,7 @@ export async function POST(request: Request) {
 
     const now = new Date();
     await syncProfileUpdateDrafts(mode, now);
-    const db = getDbForMode(mode);
+    const { db, tables: { chatMessages } } = getDatabaseContextForMode(mode);
     const receiverProfile = await getProfileRowByIdForMode(mode, receiverId);
 
     assertApi(receiverProfile, "Chat user not found", {

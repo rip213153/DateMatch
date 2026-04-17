@@ -7,9 +7,8 @@ import {
   readJsonBody,
   readTrimmedString,
 } from "@/lib/api-route";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { setSessionCookie } from "@/lib/server-auth";
-import { emailLoginTokens, profiles } from "@/lib/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +35,10 @@ export async function POST(request: Request) {
         : (["romance", "friendship"] as const);
 
     for (const mode of modesToCheck) {
-      const db = getDbForMode(mode);
+      const {
+        db,
+        tables: { emailLoginTokens, profiles },
+      } = getDatabaseContextForMode(mode);
       const rows = await db
         .select({ id: emailLoginTokens.id, email: emailLoginTokens.email })
         .from(emailLoginTokens)

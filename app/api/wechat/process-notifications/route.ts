@@ -9,9 +9,8 @@ import {
   listChatNotificationEvents,
   markChatNotificationEvent,
 } from "@/lib/chat-notification-events";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { isOpsRequestAuthorized } from "@/lib/ops-auth";
-import { chatMessages, profiles } from "@/lib/schema";
 import {
   getAppBaseUrl,
   isWeChatNotificationDeliveryConfigured,
@@ -42,7 +41,10 @@ export async function POST(request: Request) {
     const mode = resolveQuizMode(payload?.mode);
     const receiverId = toPositiveInt(payload?.receiverId);
     const limit = Math.min(Math.max(toPositiveInt(payload?.limit) ?? 20, 1), 50);
-    const db = getDbForMode(mode);
+    const {
+      db,
+      tables: { chatMessages, profiles },
+    } = getDatabaseContextForMode(mode);
     const events = await listChatNotificationEvents(mode, {
       receiverId,
       status: "PENDING",

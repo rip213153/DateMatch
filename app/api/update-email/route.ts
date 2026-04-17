@@ -8,8 +8,7 @@ import {
   readPositiveInt,
 } from "@/lib/api-route";
 import { createSessionToken } from "@/lib/session";
-import { getDbForMode, resolveQuizMode } from "@/lib/database";
-import { profiles } from "@/lib/schema";
+import { getDatabaseContextForMode, resolveQuizMode } from "@/lib/database";
 import { requireAuthenticatedProfile } from "@/lib/server-auth";
 import { postUpdateProfileFieldAuthContext } from "@/lib/update-profile-field-route-core";
 
@@ -33,7 +32,7 @@ export async function POST(request: Request) {
       code: "INVALID_EMAIL",
     });
 
-    const db = getDbForMode(mode);
+    const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
     const duplicateRows = await db
       .select({ id: profiles.id })
       .from(profiles)

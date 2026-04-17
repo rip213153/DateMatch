@@ -1,13 +1,13 @@
 import type { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import type { QuizMode } from "../app/data/types";
+import type { ProfileRow } from "./db/schema-types";
 import { assertApi } from "./api-route";
 import {
   isAuthenticatedUserIdAllowed,
   readSessionPayloadFromCookieHeader,
 } from "./auth-session-core";
-import { getDbForMode } from "./database";
-import { profiles } from "./schema";
+import { getDatabaseContextForMode } from "./database";
 import type { SessionPayload } from "./session";
 import { createSessionToken, verifySessionToken } from "./session";
 
@@ -16,7 +16,7 @@ export const SESSION_COOKIE_NAME = "datematch_session";
 export type AuthenticatedRequestContext = {
   mode: QuizMode;
   session: SessionPayload;
-  profile: typeof profiles.$inferSelect;
+  profile: ProfileRow;
 };
 
 export function readSessionFromRequest(request: Request): SessionPayload | null {
@@ -69,7 +69,7 @@ export async function requireAuthenticatedProfile(
     code: "AUTH_MODE_MISMATCH",
   });
 
-  const db = getDbForMode(mode);
+  const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
   const rows = await db
     .select()
     .from(profiles)

@@ -5,8 +5,7 @@ import type {
   ChatNotificationEventType,
   QuizMode,
 } from "@/app/data/types";
-import { getDbForMode } from "@/lib/database";
-import { chatNotificationEvents } from "@/lib/schema";
+import { getDatabaseContextForMode } from "@/lib/database";
 
 type ChatNotificationEmailStatus = "PENDING" | "PROCESSED" | "FAILED" | "SKIPPED";
 
@@ -68,7 +67,7 @@ export async function createChatNotificationEvent(
     eventType?: ChatNotificationEventType;
   }
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { chatNotificationEvents } } = getDatabaseContextForMode(mode);
   const [inserted] = await db
     .insert(chatNotificationEvents)
     .values({
@@ -102,7 +101,7 @@ export async function listChatNotificationEvents(
     limit?: number;
   } = {}
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { chatNotificationEvents } } = getDatabaseContextForMode(mode);
   const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
   const receiverId = options.receiverId ?? null;
   const status = options.status ?? null;
@@ -147,7 +146,7 @@ export async function markChatNotificationEvent(
     lastError?: string | null;
   }
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { chatNotificationEvents } } = getDatabaseContextForMode(mode);
   const [updated] = await db
     .update(chatNotificationEvents)
     .set({
@@ -179,7 +178,7 @@ export async function listChatEmailNotificationEvents(
     limit?: number;
   } = {}
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { chatNotificationEvents } } = getDatabaseContextForMode(mode);
   const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
   const receiverId = options.receiverId ?? null;
   const status = options.status ?? null;
@@ -227,7 +226,7 @@ export async function markChatEmailNotificationEvent(
     lastError?: string | null;
   }
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { chatNotificationEvents } } = getDatabaseContextForMode(mode);
   const [updated] = await db
     .update(chatNotificationEvents)
     .set({

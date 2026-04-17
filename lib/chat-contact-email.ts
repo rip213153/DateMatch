@@ -3,8 +3,7 @@ import {
   buildChatConversationCondition,
   resolveChatConversationScope,
 } from "@/lib/chat-conversations";
-import { getDbForMode } from "@/lib/database";
-import { chatMessages } from "@/lib/schema";
+import { getDatabaseContextForMode } from "@/lib/database";
 
 export type ChatDirectionRow = {
   sender_id: number;
@@ -56,14 +55,14 @@ export async function resolveChatEmailAccess(
     };
   }
 
-  const db = getDbForMode(mode);
+  const { db, tables: { chatMessages } } = getDatabaseContextForMode(mode);
   const rows = await db
     .select({
       sender_id: chatMessages.sender_id,
       receiver_id: chatMessages.receiver_id,
     })
     .from(chatMessages)
-    .where(buildChatConversationCondition(userId, targetUserId, conversation.roundKey));
+    .where(buildChatConversationCondition(chatMessages, userId, targetUserId, conversation.roundKey));
 
   return {
     conversation,

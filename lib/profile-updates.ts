@@ -1,10 +1,10 @@
 import { and, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import type { QuizMode } from "@/app/data/types";
 import { serializeIdealPreferenceTags } from "@/app/data/idealPreferenceTags";
-import { getDbForMode } from "@/lib/database";
+import type { DraftRow, ProfileRow } from "@/lib/db/schema-types";
+import { getDatabaseContextForMode } from "@/lib/database";
 import { serializeInterestValues } from "@/lib/interest-tags";
 import { getMatchSchedule } from "@/lib/match-schedule";
-import { profileUpdateDrafts, profiles } from "@/lib/schema";
 
 const IMMEDIATE_PROFILE_KEYS = ["name", "bio", "email", "ideal_date", "ideal_date_tags", "interests"] as const;
 const DEFERRED_PROFILE_KEYS = [
@@ -23,8 +23,6 @@ type DeferredProfileUpdate = Partial<
   Record<DeferredProfileKey, string | number | object | null | undefined>
 >;
 
-type ProfileRow = typeof profiles.$inferSelect;
-type DraftRow = typeof profileUpdateDrafts.$inferSelect;
 const ALL_QUIZ_MODES: QuizMode[] = ["romance", "friendship"];
 
 function normalizeString(value: unknown) {
@@ -128,7 +126,7 @@ function applyDraftPayloadToProfile(profileRow: ProfileRow, draftRow: DraftRow |
 }
 
 export async function syncProfileUpdateDrafts(mode: QuizMode, now: Date = new Date()) {
-  const db = getDbForMode(mode);
+  const { db, tables: { profileUpdateDrafts, profiles } } = getDatabaseContextForMode(mode);
   const dueDrafts = await db
     .select()
     .from(profileUpdateDrafts)
@@ -166,14 +164,15 @@ export async function syncProfileUpdateDraftsForAllModes(now: Date = new Date())
 }
 
 export async function listAllProfilesForMode(mode: QuizMode) {
-  return getDbForMode(mode).select().from(profiles);
+  const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
+  return db.select().from(profiles);
 }
 
 export async function getProfileRowByIdForMode(
   mode: QuizMode,
   userId: number,
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
 
   const [profileRow] = await db.select().from(profiles).where(eq(profiles.id, userId)).limit(1);
   return profileRow ?? null;
@@ -188,7 +187,7 @@ export async function listProfileRowsByIdsForMode(
     return [] as ProfileRow[];
   }
 
-  const db = getDbForMode(mode);
+  const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
   return db.select().from(profiles).where(inArray(profiles.id, ids));
 }
 
@@ -197,7 +196,7 @@ export async function listEligibleProfileRowsForRound(
   releaseAt: number,
   now: Date = new Date(),
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { profiles } } = getDatabaseContextForMode(mode);
   return db
     .select()
     .from(profiles)
@@ -210,7 +209,7 @@ export async function listEligibleProfileRowsForRound(
 }
 
 export async function getProfileWithPendingDraft(userId: number, mode: QuizMode) {
-  const db = getDbForMode(mode);
+  const { db, tables: { profileUpdateDrafts, profiles } } = getDatabaseContextForMode(mode);
 
   const [profileRow] = await db.select().from(profiles).where(eq(profiles.id, userId)).limit(1);
   if (!profileRow) {
@@ -236,7 +235,7 @@ export async function saveProfileUpdates(
   payload: ReturnType<typeof normalizeProfileFormPayload>,
   now: Date = new Date()
 ) {
-  const db = getDbForMode(mode);
+  const { db, tables: { profileUpdateDrafts, profiles } } = getDatabaseContextForMode(mode);
   await syncProfileUpdateDrafts(mode, now);
   const schedule = getMatchSchedule(now);
   const current = await getProfileWithPendingDraft(userId, mode);

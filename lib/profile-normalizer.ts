@@ -1,8 +1,6 @@
 import type { UserProfile } from "@/app/data/types";
 import { normalizeIdealPreferenceTags } from "@/app/data/idealPreferenceTags";
-import { profiles } from "@/lib/schema";
-
-type ProfileRow = typeof profiles.$inferSelect;
+import type { ProfileRow } from "@/lib/db/schema-types";
 
 function normalizeInterests(value: unknown): UserProfile["interests"] {
   if (Array.isArray(value)) {
@@ -24,10 +22,19 @@ function normalizePersonalityProfile(value: unknown): UserProfile["personality_p
   return undefined;
 }
 
+function normalizeCreatedAt(value: ProfileRow["created_at"]): UserProfile["created_at"] {
+  if (typeof value === "number") {
+    const date = new Date(value > 1_000_000_000_000 ? value : value * 1000);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  return value ?? null;
+}
+
 export function normalizeProfile(row: ProfileRow): UserProfile {
   return {
     id: row.id,
-    created_at: row.created_at ?? null,
+    created_at: normalizeCreatedAt(row.created_at),
     name: row.name,
     age: row.age,
     gender: row.gender,
