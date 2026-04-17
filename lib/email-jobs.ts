@@ -465,12 +465,35 @@ function isBuildProcess() {
   return process.argv.some((arg) => /\bbuild\b/i.test(arg));
 }
 
+function isTruthyEnvFlag(value: string | undefined) {
+  if (!value) {
+    return false;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+function shouldStartEmailBackgroundWorkers() {
+  const explicitFlag = process.env.ENABLE_EMAIL_BACKGROUND_WORKERS;
+  if (explicitFlag !== undefined) {
+    return isTruthyEnvFlag(explicitFlag);
+  }
+
+  return process.env.NODE_ENV !== "production";
+}
+
 export function ensureEmailBackgroundWorkersStarted() {
   if (process.env.NODE_ENV === "test") {
     return;
   }
 
   if (isBuildProcess()) {
+    return;
+  }
+
+  if (!shouldStartEmailBackgroundWorkers()) {
+    console.info("DateMatch email background workers disabled for this runtime");
     return;
   }
 
